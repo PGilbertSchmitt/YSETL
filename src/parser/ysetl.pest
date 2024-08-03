@@ -1,0 +1,194 @@
+WHITESPACE    = _{ " " | "\t" | NEWLINE }
+BLOCK_COMMENT = _{ "/*" ~ (BLOCK_COMMENT | !"*/" ~ ANY)* ~ "*/" }
+COMMENT       = _{ BLOCK_COMMENT | (dbl_slash ~ (!NEWLINE ~ ANY)*) }
+__            = _{ WHITESPACE }
+
+// Broad Keywords
+
+kw_null   =  { "null" }
+kw_true   =  { "true" }
+kw_false  =  { "false" }
+kw_newat  =  { "newat" }
+kw_fn     =  { "fn" }
+kw_if     = @{ "if" ~ __ }
+kw_case   = @{ "case" ~ __ }
+kw_return = @{ "return" ~ __ }
+
+// Operator Keywords
+
+kw_not    = @{ "not" ~ __ }
+
+kw_mod    = @{ "mod" ~ __ }
+kw_in     = @{ "in" ~ __ }
+kw_notin  = @{ "notin" ~ __ }
+kw_subset = @{ "subset" ~ __ }
+kw_impl   = @{ "impl" ~ __ }
+kw_iff    = @{ "iff" ~ __ }
+kw_and    = @{ "and" ~ __ }
+kw_or     = @{ "or" ~ __ }
+kw_union  = @{ "union" ~ __ }
+kw_inter  = @{ "inter" ~ __ }
+kw_div    = @{ "div" ~ __ }
+kw_with   = @{ "with" ~ __ }
+kw_less   = @{ "less" ~ __ }
+
+kw_exists = @{ "exists" ~ __ }
+kw_forall = @{ "forall" ~ __ }
+kw_choose = @{ "choose" ~ __ }
+kw_where  = @{ "where" ~ __ }
+
+// Non-operator / silent operator symbols
+
+semicolon = _{ ";" }
+colon     = _{ ":" }
+comma     = _{ "," }
+lodash    = _{ "_" }
+b_slash   = _{ "\\" }
+quote     = _{ "\"" }
+percent   = _{ "%" }
+pipe      = _{ "|" }
+dot       = _{ "." }
+qst       = _{ "?" }
+eq        = _{ "=" }
+l_brace   = _{ "{" }
+r_brace   = _{ "}" }
+l_paren   = _{ "(" }
+r_paren   = _{ ")" }
+l_brack   = _{ "[" }
+r_brack   = _{ "]" }
+arrow     = _{ "=>" }
+dbl_slash = _{ "//" }
+dbl_dot   = _{ ".." }
+tpl_dot   = _{ "..." }
+
+// Direct operator symbols
+
+plus     = { "+" }
+dash     = { "-" }
+star     = { "*" }
+slash    = { "/" }
+bang     = { "!" }
+hash     = { "#" }
+caret    = { "^" }
+dollar   = { "$" }
+tilde    = { "~" }
+amp      = { "&" }
+at       = { "@" }
+lt       = { "<" }
+gt       = { ">" }
+dbl_eq   = { "==" }
+bang_eq  = { "!=" }
+lt_eq    = { "<=" }
+gt_eq    = { ">=" }
+dbl_star = { "**" }
+dbl_amp  = { "&&" }
+dbl_pipe = { "||" }
+dbl_qst  = { "??" }
+dbl_lt   = { "<<" }
+dbl_gt   = { ">>" }
+
+// Operator Groups
+
+nested_expression = { l_paren ~ expr ~ r_paren }
+
+prefix_op = _{
+  | dash
+  | plus
+  | hash
+  | bang
+  | caret
+  | dollar
+  | tilde
+  | amp
+  | kw_not
+}
+
+// Precedence is handled by the PRATT_PARSER in the `./parser.rs` file
+binary_op = _{
+  | dbl_qst
+  | dbl_star
+  | dbl_lt
+  | dbl_gt
+  | dbl_eq
+  | dbl_amp
+  | dbl_pipe
+  | lt_eq
+  | gt_eq
+  | bang_eq
+  | at
+  | star
+  | slash
+  | plus
+  | dash
+  | amp
+  | pipe
+  | caret
+  | lt
+  | gt
+  | kw_div
+  | kw_inter
+  | kw_mod
+  | kw_with
+  | kw_less
+  | kw_union
+  | kw_in
+  | kw_notin
+  | kw_subset
+  | kw_and
+  | kw_or
+  | kw_impl
+  | kw_iff
+}
+
+select_op = _{
+  | kw_exists
+  | kw_forall
+  | kw_choose
+}
+
+where_op = _{ kw_where }
+
+// Literals
+
+atom_keep =  { (ASCII_ALPHANUMERIC | lodash)+ }
+atom      = ${ colon ~ atom_keep }
+
+number_base    = @{ ASCII_DIGIT+ }
+number_decimal = @{ (dot ~ ASCII_DIGIT+)? }
+number_exp     = @{ ((^"e" | ^"f") ~ (plus | dash)? ~ ASCII_DIGIT+)? }
+number         = ${ number_base ~ number_decimal ~ number_exp }
+
+string_char = _{
+  | !(quote | b_slash) ~ ANY
+  | b_slash ~ (quote | b_slash | "n" | "t")
+}
+string_keep =  { string_char* }
+string      = ${ quote ~ string_keep ~ quote }
+
+ident = @{ (ASCII_ALPHA | lodash) ~ (ASCII_ALPHANUMERIC | lodash)* }
+
+tuple_literal = { l_brack ~ r_brack }
+set_literal = { l_brace ~ r_brace }
+
+// Expressions
+
+primary = _{
+  | kw_null
+  | kw_newat
+  | kw_true
+  | kw_false
+  | atom
+  | number
+  | string
+  | tuple_literal
+  | set_literal
+  // | func_literal
+  | ident // Must come after any keywords
+  | nested_expression
+}
+
+gen_expr = { prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
+
+expr = _{
+  | gen_expr
+}
