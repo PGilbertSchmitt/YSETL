@@ -1,4 +1,4 @@
-use parser::{grammar::Rule, parser::{parse, print_structure}};
+use parser::{grammar::Rule, parser::print_structure};
 
 pub mod parser;
 

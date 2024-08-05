@@ -13,6 +13,7 @@ use super::ast::PreOp;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
 
+// TODO: Support better Err type with location information
 type YsetlParseError = String;
 type ExprResult = Result<ExprST, YsetlParseError>;
 type FormerResult = Result<Former, YsetlParseError>;
@@ -76,10 +77,7 @@ lazy_static::lazy_static! {
 }
 
 pub fn print_structure(rule: Rule, input: &str) {
-    let result = YsetlParser::parse(rule, input)
-        .unwrap()
-        .next()
-        .unwrap();
+    let result = YsetlParser::parse(rule, input).unwrap().next().unwrap();
 
     println!("{}", pair_structure(result))
 }
@@ -125,7 +123,7 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         rule => {
             println!("failed to process rule: {:?}", rule);
             unimplemented!()
-        },
+        }
     }
 }
 
@@ -195,18 +193,18 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
 
 // tuple_literal([FORMER])
 fn parse_tuple_literal(pair: Pair<Rule>) -> ExprResult {
-    return Ok(ExprST::Tuple(parse_former(pair)?))
+    Ok(ExprST::Tuple(parse_former(pair)?))
 }
 
 // set_literal([FORMER])
 fn parse_set_literal(pair: Pair<Rule>) -> ExprResult {
-    return Ok(ExprST::Set(parse_former(pair)?))
+    Ok(ExprST::Set(parse_former(pair)?))
 }
 
 fn parse_former(pair: Pair<Rule>) -> FormerResult {
     if let Some(former) = pair.into_inner().next() {
         match former.as_rule() {
-            Rule::expr_list =>  Ok(Former::Literal(parse_expr_list(former)?)),
+            Rule::expr_list => Ok(Former::Literal(parse_expr_list(former)?)),
             Rule::range_former => parse_range_former(former),
             Rule::interval_range_former => parse_interval_range_former(former),
             _ => unreachable!(),
@@ -240,13 +238,26 @@ fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
 
 // interval_range_former([EXPR, RANGE_FORMER])
 fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
-    let mut parts  = pair.into_inner();
+    let mut parts = pair.into_inner();
     let step = parse_expr(parts.next().unwrap())?;
     let range = parse_range_former(parts.next().unwrap())?;
-    if let Former::Range { inclusive, start, end, .. } = range {
-        Ok(Former::Range { inclusive: inclusive, start: start, end: end, step: Some(Box::new(step)) })
+    if let Former::Range {
+        inclusive,
+        start,
+        end,
+        ..
+    } = range
+    {
+        Ok(Former::Range {
+            inclusive: inclusive,
+            start: start,
+            end: end,
+            step: Some(Box::new(step)),
+        })
     } else {
-        Err(String::from("Unexpected error while parsing interval range"))
+        Err(String::from(
+            "Unexpected error while parsing interval range",
+        ))
     }
     // Ok(range)
 }
