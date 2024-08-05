@@ -4,13 +4,19 @@ use pest::pratt_parser::PrattParser;
 use pest::Parser;
 use pest::Span;
 
+use crate::parser::debug::pair_structure;
+
 use super::ast::BinOp;
 use super::ast::ExprST;
+use super::ast::Former;
 use super::ast::PreOp;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
 
-type ExprResult = Result<ExprST, String>;
+type YsetlParseError = String;
+type ExprResult = Result<ExprST, YsetlParseError>;
+type FormerResult = Result<Former, YsetlParseError>;
+type VecResult = Result<Vec<ExprST>, YsetlParseError>;
 
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
@@ -69,16 +75,13 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn print_structure(input: &str) {
-    let result = YsetlParser::parse(Rule::expr, input)
+pub fn print_structure(rule: Rule, input: &str) {
+    let result = YsetlParser::parse(rule, input)
         .unwrap()
-        .next()
-        .unwrap()
-        .into_inner()
         .next()
         .unwrap();
 
-    println!("{}", result)
+    println!("{}", pair_structure(result))
 }
 
 pub fn parse(input: &str) {
@@ -88,7 +91,7 @@ pub fn parse(input: &str) {
         .unwrap();
 
     match parse_expr(result) {
-        Ok(expr) => println!("{:?}", expr),
+        Ok(expr) => println!("output -> {:?}", expr),
         Err(reason) => println!("{reason}"),
     }
 
@@ -117,24 +120,28 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::string => parse_string(primary),
         Rule::atom => parse_atom(primary),
         Rule::number => parse_number(primary),
-        _ => unimplemented!(),
+        Rule::tuple_literal => parse_tuple_literal(primary),
+        Rule::set_literal => parse_set_literal(primary),
+        rule => {
+            println!("failed to process rule: {:?}", rule);
+            unimplemented!()
+        },
     }
 }
 
-// String literal primary parses into `string(s, e, [string_keep(s+1, e-1)])`
+// string([string_keep])
 fn parse_string(pair: Pair<Rule>) -> ExprResult {
     let inner = pair.into_inner();
     Ok(ExprST::String(inner.as_str().to_owned()))
 }
 
-// Atom literal primary parses into `atom(s, e, [atom_keep(s+1, e)])`
+// atom([atom_keep])
 fn parse_atom(pair: Pair<Rule>) -> ExprResult {
     let inner = pair.into_inner();
     Ok(ExprST::Atom(inner.as_str().to_owned()))
 }
 
-// Number literal primary parses into
-// `number(s, e, [number_base(s, _), number_decimal(_, _), number_exp(_, e)])`
+// number([number_base, number_decimal, number_exp])
 fn parse_number(pair: Pair<Rule>) -> ExprResult {
     let span = pair.as_span();
     let mut parts = pair.into_inner().map(|part| part.as_str());
@@ -184,6 +191,69 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
                 )
             })
     }
+}
+
+// tuple_literal([FORMER])
+fn parse_tuple_literal(pair: Pair<Rule>) -> ExprResult {
+    return Ok(ExprST::Tuple(parse_former(pair)?))
+}
+
+// set_literal([FORMER])
+fn parse_set_literal(pair: Pair<Rule>) -> ExprResult {
+    return Ok(ExprST::Set(parse_former(pair)?))
+}
+
+fn parse_former(pair: Pair<Rule>) -> FormerResult {
+    if let Some(former) = pair.into_inner().next() {
+        match former.as_rule() {
+            Rule::expr_list =>  Ok(Former::Literal(parse_expr_list(former)?)),
+            Rule::range_former => parse_range_former(former),
+            Rule::interval_range_former => parse_interval_range_former(former),
+            _ => unreachable!(),
+        }
+    } else {
+        Ok(Former::Empty)
+    }
+}
+
+// range_former([EXPR, exclusive_range_op, EXPR])
+// range_former([EXPR, inclusive_range_op, EXPR])
+fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
+    let mut parts = pair.into_inner();
+    let start = parse_expr(parts.next().unwrap())?;
+    let op = parts.next().unwrap();
+    let end = parse_expr(parts.next().unwrap())?;
+
+    let inclusive = match op.as_rule() {
+        Rule::inclusive_range_op => true,
+        Rule::exclusive_range_op => false,
+        _ => unreachable!(),
+    };
+
+    Ok(Former::Range {
+        inclusive: inclusive,
+        start: Box::new(start),
+        end: Box::new(end),
+        step: None,
+    })
+}
+
+// interval_range_former([EXPR, RANGE_FORMER])
+fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
+    let mut parts  = pair.into_inner();
+    let step = parse_expr(parts.next().unwrap())?;
+    let range = parse_range_former(parts.next().unwrap())?;
+    if let Former::Range { inclusive, start, end, .. } = range {
+        Ok(Former::Range { inclusive: inclusive, start: start, end: end, step: Some(Box::new(step)) })
+    } else {
+        Err(String::from("Unexpected error while parsing interval range"))
+    }
+    // Ok(range)
+}
+
+// expr_list([EXPR, EXPR, ..., EXPR])
+fn parse_expr_list(pair: Pair<Rule>) -> VecResult {
+    pair.into_inner().map(|inner| parse_expr(inner)).collect()
 }
 
 fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {

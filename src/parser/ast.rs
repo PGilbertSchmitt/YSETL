@@ -40,6 +40,18 @@ pub enum PreOp {
 }
 
 #[derive(Debug)]
+pub enum Former {
+    Empty,
+    Literal(Vec<ExprST>),
+    Range {
+        inclusive: bool,
+        start: Box<ExprST>,
+        end: Box<ExprST>,
+        step: Option<Box<ExprST>>,
+    },
+}
+
+#[derive(Debug)]
 pub enum ExprST {
     Null,
     Newat,
@@ -50,6 +62,8 @@ pub enum ExprST {
     Ident(String),
     Integer(i64),
     Float(f64),
+    Tuple(Former),
+    Set(Former),
     Infix {
         op: BinOp,
         lfs: Box<ExprST>,

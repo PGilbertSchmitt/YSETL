@@ -167,8 +167,26 @@ string      = ${ quote ~ string_keep ~ quote }
 
 ident = @{ (ASCII_ALPHA | lodash) ~ (ASCII_ALPHANUMERIC | lodash)* }
 
-tuple_literal = { l_brack ~ r_brack }
-set_literal = { l_brace ~ r_brace }
+tuple_literal = { l_brack ~ former? ~ r_brack }
+
+set_literal = { l_brace ~ former? ~ r_brace }
+
+// map_literal = { l_brace ~ r_brace }
+
+// Former
+
+inclusive_range_op = { tpl_dot }
+exclusive_range_op = { dbl_dot }
+range_op = _{ inclusive_range_op | exclusive_range_op }
+range_former = { expr ~ range_op ~ expr }
+interval_range_former = { expr ~ comma ~ range_former }
+
+former = _{
+  // | iterator_former
+  | interval_range_former // must come before literal former
+  | range_former
+  | expr_list
+}
 
 // Expressions
 
@@ -192,3 +210,5 @@ gen_expr = { prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
 expr = _{
   | gen_expr
 }
+
+expr_list = { expr ~ (comma ~ expr)* }

@@ -1,8 +1,7 @@
-use parser::parser::parse;
+use parser::{grammar::Rule, parser::{parse, print_structure}};
 
 pub mod parser;
 
 fn main() {
-    parse(":abc");
-    parse(":123");
+    print_structure(Rule::expr_list, ":a, :a");
 }
