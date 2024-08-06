@@ -168,25 +168,59 @@ string      = ${ quote ~ string_keep ~ quote }
 ident = @{ (ASCII_ALPHA | lodash) ~ (ASCII_ALPHANUMERIC | lodash)* }
 
 tuple_literal = { l_brack ~ former? ~ r_brack }
-
-set_literal = { l_brace ~ former? ~ r_brace }
+set_literal   = { l_brace ~ former? ~ r_brace }
 
 // map_literal = { l_brace ~ r_brace }
 
 // Former
 
-inclusive_range_op = { tpl_dot }
-exclusive_range_op = { dbl_dot }
-range_op = _{ inclusive_range_op | exclusive_range_op }
-range_former = { expr ~ range_op ~ expr }
-interval_range_former = { expr ~ comma ~ range_former }
+iterator_former       =  { expr ~ colon ~ iterator }
+inclusive_range_op    =  { tpl_dot }
+exclusive_range_op    =  { dbl_dot }
+range_op              = _{ inclusive_range_op | exclusive_range_op }
+range_former          =  { expr ~ range_op ~ expr }
+interval_range_former =  { expr ~ comma ~ range_former }
 
 former = _{
-  // | iterator_former
+  | iterator_former
   | interval_range_former // must come before literal former
   | range_former
   | expr_list
 }
+
+// Bound (The LHS of an assignment / destructuring)
+
+// An outermost bound can be a identifier or a list of bounds
+// Inside a bound-list, a bound can also be a `~`, which is used
+// to skip element in an assignment
+
+bound = _{
+  | ident
+  | bound_list_wrapped
+}
+
+bound_list_inner = _{
+  | tilde
+  | ident
+  | bound_list_wrapped
+}
+
+bound_list         =  { bound_list_inner ~ (comma ~ bound_list_inner)* }
+bound_list_wrapped = _{ l_brack ~ bound_list? ~ r_brack }
+
+// Iterators
+
+silent_in              = _{ "in" }
+in_iterator            =  { bound_list ~ silent_in ~ expr }
+select_iterator_single =  { bound ~ eq ~ ident ~ l_paren ~ bound_list ~ r_paren }
+select_iterator_multi  =  { bound ~ eq ~ ident ~ l_brace ~ bound_list ~ r_brace }
+single_iterator        = _{
+  | in_iterator
+  | select_iterator_single
+  | select_iterator_multi
+}
+iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* }
+iterator               =  { iterator_list ~ (pipe ~ expr_list)? }
 
 // Expressions
 

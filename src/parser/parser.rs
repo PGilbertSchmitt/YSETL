@@ -4,20 +4,26 @@ use pest::pratt_parser::PrattParser;
 use pest::Parser;
 use pest::Span;
 
-use crate::parser::debug::pair_structure;
-
 use super::ast::BinOp;
-use super::ast::ExprST;
+use super::ast::Bound;
+use super::ast::BoundList;
+use super::ast::Expr;
+use super::ast::ExprList;
 use super::ast::Former;
+use super::ast::Iterator;
+use super::ast::IteratorList;
 use super::ast::PreOp;
+use super::ast::SingleIterator;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
 
 // TODO: Support better Err type with location information
 type YsetlParseError = String;
-type ExprResult = Result<ExprST, YsetlParseError>;
+
+type ExprResult = Result<Expr, YsetlParseError>;
 type FormerResult = Result<Former, YsetlParseError>;
-type VecResult = Result<Vec<ExprST>, YsetlParseError>;
+type VecResult = Result<ExprList, YsetlParseError>;
+type SingleIteratorResult = Result<SingleIterator, YsetlParseError>;
 
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
@@ -76,12 +82,6 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn print_structure(rule: Rule, input: &str) {
-    let result = YsetlParser::parse(rule, input).unwrap().next().unwrap();
-
-    println!("{}", pair_structure(result))
-}
-
 pub fn parse(input: &str) {
     let result = YsetlParser::parse(Rule::expr, input)
         .unwrap()
@@ -111,12 +111,13 @@ fn parse_expr(expression: Pair<Rule>) -> ExprResult {
 
 fn parse_primary(primary: Pair<Rule>) -> ExprResult {
     match primary.as_rule() {
-        Rule::kw_null => Ok(ExprST::Null),
-        Rule::kw_newat => Ok(ExprST::Newat),
-        Rule::kw_true => Ok(ExprST::True),
-        Rule::kw_false => Ok(ExprST::False),
+        Rule::kw_null => Ok(Expr::Null),
+        Rule::kw_newat => Ok(Expr::Newat),
+        Rule::kw_true => Ok(Expr::True),
+        Rule::kw_false => Ok(Expr::False),
         Rule::string => parse_string(primary),
         Rule::atom => parse_atom(primary),
+        Rule::ident => parse_ident(primary),
         Rule::number => parse_number(primary),
         Rule::tuple_literal => parse_tuple_literal(primary),
         Rule::set_literal => parse_set_literal(primary),
@@ -130,22 +131,26 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
 // string([string_keep])
 fn parse_string(pair: Pair<Rule>) -> ExprResult {
     let inner = pair.into_inner();
-    Ok(ExprST::String(inner.as_str().to_owned()))
+    Ok(Expr::String(inner.as_str().to_owned()))
 }
 
 // atom([atom_keep])
 fn parse_atom(pair: Pair<Rule>) -> ExprResult {
     let inner = pair.into_inner();
-    Ok(ExprST::Atom(inner.as_str().to_owned()))
+    Ok(Expr::Atom(inner.as_str().to_owned()))
+}
+
+fn parse_ident(pair: Pair<Rule>) -> ExprResult {
+    Ok(Expr::Ident(pair.as_str().to_owned()))
 }
 
 // number([number_base, number_decimal, number_exp])
 fn parse_number(pair: Pair<Rule>) -> ExprResult {
     let span = pair.as_span();
-    let mut parts = pair.into_inner().map(|part| part.as_str());
-    let base = parts.next().unwrap();
-    let decimal = parts.next().unwrap();
-    let exponent = parts.next().unwrap();
+    let mut parts = pair.into_inner();//.map(|part| part.as_str());
+    let base = careful_unwrap(parts.next())?.as_str();
+    let decimal = careful_unwrap(parts.next())?.as_str();
+    let exponent = careful_unwrap(parts.next())?.as_str();
     let with_exponent = !exponent.is_empty();
 
     let is_float = !decimal.is_empty() || with_exponent;
@@ -166,7 +171,7 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
                     let span_string = span_start_str(span);
                     Err(format!("{span_string}, Encountered float parsing error: float literal too large to process"))
                 } else {
-                    Ok(ExprST::Float(float))
+                    Ok(Expr::Float(float))
                 }
             }
             Err(err) => {
@@ -180,7 +185,7 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
     } else {
         number_string
             .parse::<i64>()
-            .map(|int| ExprST::Integer(int))
+            .map(|int| Expr::Integer(int))
             .map_err(|err| {
                 let span_string = span_start_str(span);
                 format!(
@@ -193,12 +198,12 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
 
 // tuple_literal([FORMER])
 fn parse_tuple_literal(pair: Pair<Rule>) -> ExprResult {
-    Ok(ExprST::Tuple(parse_former(pair)?))
+    Ok(Expr::Tuple(parse_former(pair)?))
 }
 
 // set_literal([FORMER])
 fn parse_set_literal(pair: Pair<Rule>) -> ExprResult {
-    Ok(ExprST::Set(parse_former(pair)?))
+    Ok(Expr::Set(parse_former(pair)?))
 }
 
 fn parse_former(pair: Pair<Rule>) -> FormerResult {
@@ -207,6 +212,7 @@ fn parse_former(pair: Pair<Rule>) -> FormerResult {
             Rule::expr_list => Ok(Former::Literal(parse_expr_list(former)?)),
             Rule::range_former => parse_range_former(former),
             Rule::interval_range_former => parse_interval_range_former(former),
+            Rule::iterator_former => parse_iterator_former(former),
             _ => unreachable!(),
         }
     } else {
@@ -214,13 +220,18 @@ fn parse_former(pair: Pair<Rule>) -> FormerResult {
     }
 }
 
+// expr_list([EXPR, EXPR, ..., EXPR])
+fn parse_expr_list(pair: Pair<Rule>) -> VecResult {
+    pair.into_inner().map(|inner| parse_expr(inner)).collect()
+}
+
 // range_former([EXPR, exclusive_range_op, EXPR])
 // range_former([EXPR, inclusive_range_op, EXPR])
 fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
     let mut parts = pair.into_inner();
-    let start = parse_expr(parts.next().unwrap())?;
-    let op = parts.next().unwrap();
-    let end = parse_expr(parts.next().unwrap())?;
+    let start = parse_expr(careful_unwrap(parts.next())?)?;
+    let op = careful_unwrap(parts.next())?;
+    let end = parse_expr(careful_unwrap(parts.next())?)?;
 
     let inclusive = match op.as_rule() {
         Rule::inclusive_range_op => true,
@@ -239,8 +250,8 @@ fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
 // interval_range_former([EXPR, RANGE_FORMER])
 fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
     let mut parts = pair.into_inner();
-    let step = parse_expr(parts.next().unwrap())?;
-    let range = parse_range_former(parts.next().unwrap())?;
+    let step = parse_expr(careful_unwrap(parts.next())?)?;
+    let range = parse_range_former(careful_unwrap(parts.next())?)?;
     if let Former::Range {
         inclusive,
         start,
@@ -259,12 +270,13 @@ fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
             "Unexpected error while parsing interval range",
         ))
     }
-    // Ok(range)
 }
 
-// expr_list([EXPR, EXPR, ..., EXPR])
-fn parse_expr_list(pair: Pair<Rule>) -> VecResult {
-    pair.into_inner().map(|inner| parse_expr(inner)).collect()
+fn parse_iterator_former(pair: Pair<Rule>) -> FormerResult {
+    let mut parts = pair.into_inner();
+    let expr = parse_expr(careful_unwrap(parts.next())?)?;
+    let iterator = parse_iterator(careful_unwrap(parts.next())?)?;
+    Ok(Former::Iterator { output: Box::new(expr), iterator: iterator })
 }
 
 fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
@@ -279,7 +291,7 @@ fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::amp => PreOp::Init,
         _ => unimplemented!(),
     };
-    Ok(ExprST::Prefix {
+    Ok(Expr::Prefix {
         op: op,
         rhs: Box::new(rhs?),
     })
@@ -314,14 +326,94 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::kw_subset => BinOp::Subset,
         _ => unreachable!(),
     };
-    Ok(ExprST::Infix {
+    Ok(Expr::Infix {
         op: op,
         lfs: Box::new(lhs?),
         rhs: Box::new(rhs?),
     })
 }
 
+fn parse_bound(pair: Pair<Rule>) -> Bound {
+    match pair.as_rule() {
+        Rule::tilde => Bound::Tilde,
+        Rule::ident => Bound::Ident(pair.as_str().to_owned()),
+        Rule::bound_list => Bound::List(parse_bound_list(pair)),
+        _ => unreachable!(),
+    }
+}
+
+// bound_list([BOUND, BOUND, ..., BOUND])
+fn parse_bound_list(pair: Pair<Rule>) -> BoundList {
+    pair.into_inner().map(parse_bound).collect()
+}
+
+//  iterator([ITERATOR_LIST, EXPR_LIST?])
+fn parse_iterator(pair: Pair<Rule>) -> Result<Iterator, YsetlParseError> {
+    let mut parts = pair.into_inner();
+    let iterator_list = parse_iterator_list(careful_unwrap(parts.next())?)?;
+    let filters = match parts.next() {
+        Some(exprs) => parse_expr_list(exprs)?,
+        None => vec![],
+    };
+    Ok(Iterator {
+        iterators: iterator_list,
+        filters: filters,
+    })
+}
+
+// iterator_list([SINGLE_ITERATOR, SINGLE_ITERATOR, ..., SINGLE_ITERATOR])
+fn parse_iterator_list(pair: Pair<Rule>) -> Result<IteratorList, YsetlParseError> {
+    pair.into_inner().map(parse_single_iterator).collect()
+}
+
+fn parse_single_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
+    match pair.as_rule() {
+        Rule::in_iterator => parse_in_iterator(pair),
+        Rule::select_iterator_single |
+        Rule::select_iterator_multi => parse_select_iterator(pair),
+        _ => unreachable!()
+    }
+}
+
+// in_iterator([BOUND_LIST, EXPR])
+fn parse_in_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
+    let mut parts = pair.into_inner();
+    let bound_list = parse_bound_list(careful_unwrap(parts.next())?);
+    let expr = parse_expr(careful_unwrap(parts.next())?)?;
+    Ok(SingleIterator::In { bounds: bound_list, expr: expr })
+}
+
+// select_iterator_single([BOUND, IDENT, BOUND_LIST])
+// select_iterator_multi([BOUND, IDENT, BOUND_LIST])
+fn parse_select_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
+    let single = pair.as_rule() == Rule::select_iterator_single;
+    let mut parts = pair.into_inner();
+    let bound = parse_bound(careful_unwrap(parts.next())?);
+    let collection_ident = careful_unwrap(parts.next())?.as_str().to_owned();
+    let bound_list = parse_bound_list(careful_unwrap(parts.next())?);
+    if single {
+        Ok(SingleIterator::SelectOne {
+            bound: bound,
+            collection: collection_ident,
+            list: bound_list
+        })
+    } else {
+        Ok(SingleIterator::SelectMany {
+            bound: bound,
+            collection: collection_ident,
+            list: bound_list
+        })
+    }
+}
+
 fn span_start_str(span: Span) -> String {
     let (line, col) = span.start_pos().line_col();
     format!("Line {}, Col: {}", line, col)
+}
+
+fn careful_unwrap(part: Option<Pair<Rule>>) -> Result<Pair<Rule>, YsetlParseError> {
+    part.map_or_else(
+        || Err(String::from("Something horrific and unexpected has occured, please consult your doctor.")),
+        |part| Ok(part),
+    )
 }

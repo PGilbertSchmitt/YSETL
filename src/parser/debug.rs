@@ -31,6 +31,7 @@ impl Display for Rule {
             Rule::kw_forall => write!(f, "kw_forall"),
             Rule::kw_choose => write!(f, "kw_choose"),
             Rule::kw_where => write!(f, "kw_where"),
+
             Rule::plus => write!(f, "plus"),
             Rule::dash => write!(f, "dash"),
             Rule::star => write!(f, "star"),
@@ -54,6 +55,7 @@ impl Display for Rule {
             Rule::dbl_qst => write!(f, "dbl_qst"),
             Rule::dbl_lt => write!(f, "dbl_lt"),
             Rule::dbl_gt => write!(f, "dbl_gt"),
+
             Rule::nested_expression => write!(f, "nested_expression"),
             Rule::atom_keep => write!(f, "atom_keep"),
             Rule::atom => write!(f, "atom"),
@@ -66,10 +68,20 @@ impl Display for Rule {
             Rule::ident => write!(f, "ident"),
             Rule::tuple_literal => write!(f, "tuple_literal"),
             Rule::set_literal => write!(f, "set_literal"),
+
+            Rule::iterator_former => write!(f, "iterator_former"),
             Rule::inclusive_range_op => write!(f, "inclusive_range_op"),
             Rule::exclusive_range_op => write!(f, "exclusive_range_op"),
             Rule::range_former => write!(f, "range_former"),
-            Rule::interval_range_former => write!(f, "interval_range_former"), 
+            Rule::interval_range_former => write!(f, "interval_range_former"),
+
+            Rule::bound_list => write!(f, "bound_list"),
+            Rule::in_iterator => write!(f, "in_iterator"),
+            Rule::select_iterator_single => write!(f, "select_iterator_single"),
+            Rule::select_iterator_multi => write!(f, "select_iterator_multi"),
+            Rule::iterator_list => write!(f, "iterator_list"),
+            Rule::iterator => write!(f, "iterator"),
+
             Rule::gen_expr => write!(f, "gen_expr"),
             Rule::expr => write!(f, "expr"),
             Rule::expr_list => write!(f, "expr_list"),
