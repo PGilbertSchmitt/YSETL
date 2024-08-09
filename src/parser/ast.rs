@@ -8,7 +8,7 @@ pub enum BinOp {
     Mod,
     Add,
     Subtract,
-    WithBitLeft, // With / Bitshift Left
+    WithBitLeft,  // With / Bitshift Left
     LessBitRight, // Less / Bitshift Right
     BitAnd,
     BitOr,
@@ -83,7 +83,7 @@ pub enum Former {
     Iterator {
         output: Box<Expr>,
         iterator: Iterator,
-    }
+    },
 }
 
 #[derive(Debug)]
@@ -99,6 +99,11 @@ pub enum Expr {
     Float(f64),
     Tuple(Former),
     Set(Former),
+    Function {
+        req_params: Vec<String>,
+        opt_params: Vec<String>,
+        eval: Box<Expr>,
+    },
     Infix {
         op: BinOp,
         lfs: Box<Expr>,
@@ -107,9 +112,21 @@ pub enum Expr {
     Prefix {
         op: PreOp,
         rhs: Box<Expr>,
-    }
+    },
+    Block {
+        stmts: Vec<Stmt>,
+        implicit_return: Option<Box<Stmt>>,
+    },
+}
+
+#[derive(Debug)]
+pub enum Stmt {
+    Expr(Expr),
+    Return(Option<Expr>),
+    Print(Expr),
 }
 
 pub type ExprList = Vec<Expr>;
+pub type StmtList = Vec<Stmt>;
 pub type BoundList = Vec<Bound>;
 pub type IteratorList = Vec<SingleIterator>;

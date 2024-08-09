@@ -10,9 +10,11 @@ kw_true   =  { "true" }
 kw_false  =  { "false" }
 kw_newat  =  { "newat" }
 kw_fn     =  { "fn" }
+kw_return = _{ "return" }
 kw_if     = @{ "if" ~ __ }
+kw_else   = @{ "else" ~ __ }
 kw_case   = @{ "case" ~ __ }
-kw_return = @{ "return" ~ __ }
+kw_print  = _{ "print" }
 
 // Operator Keywords
 
@@ -35,9 +37,8 @@ kw_less   = @{ "less" ~ __ }
 kw_exists = @{ "exists" ~ __ }
 kw_forall = @{ "forall" ~ __ }
 kw_choose = @{ "choose" ~ __ }
-kw_where  = @{ "where" ~ __ }
 
-// Non-operator / silent operator symbols
+// Silent non-operator symbols
 
 semicolon = _{ ";" }
 colon     = _{ ":" }
@@ -146,8 +147,6 @@ select_op = _{
   | kw_choose
 }
 
-where_op = _{ kw_where }
-
 // Literals
 
 atom_keep =  { (ASCII_ALPHANUMERIC | lodash)+ }
@@ -222,6 +221,21 @@ single_iterator        = _{
 iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* }
 iterator               =  { iterator_list ~ (pipe ~ expr_list)? }
 
+// Functions
+
+req_param = ${ ident }
+opt_param = ${ ident ~ qst }
+
+// Order is significant
+param = _{
+  | opt_param
+  | req_param
+}
+
+param_list = { l_paren ~ (param ~ (comma ~ param)*)? ~ r_paren }
+
+func_literal = { param_list ~ arrow ~ expr }
+
 // Expressions
 
 primary = _{
@@ -234,15 +248,42 @@ primary = _{
   | string
   | tuple_literal
   | set_literal
-  // | func_literal
+  | func_literal
   | ident // Must come after any keywords
   | nested_expression
 }
 
-gen_expr = { prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
+gen_expr = !{ prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
+
+ternary_expr = !{ kw_if ~ expr ~ qst ~ expr ~ colon ~ expr }
+
+// switch_expr =
+
+select_expr = !{ select_op ~ iterator }
+
+block_expr = !{ l_brace ~ stmt_list ~ stmt? ~ r_brace }
 
 expr = _{
+  | ternary_expr
+  // | switch_expr
+  | select_expr
+  | block_expr
   | gen_expr
 }
 
-expr_list = { expr ~ (comma ~ expr)* }
+expr_list = !{ expr ~ (comma ~ expr)* }
+
+// Statements
+
+return_stmt = ${ kw_return ~ (__ ~ expr)? }
+
+print_stmt = ${ kw_print ~ __ ~ expr }
+
+stmt = _{
+  | return_stmt
+  | print_stmt
+  // | assignment_stmt
+  | expr
+}
+
+stmt_list = { (stmt ~ semicolon)* }

@@ -1,6 +1,6 @@
-use std::fmt::{Display, Formatter};
 use super::grammar::Rule;
 use pest::iterators::{Pair, Pairs};
+use std::fmt::{Display, Formatter};
 
 impl Display for Rule {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
@@ -11,6 +11,7 @@ impl Display for Rule {
             Rule::kw_newat => write!(f, "kw_newat"),
             Rule::kw_fn => write!(f, "kw_fn"),
             Rule::kw_if => write!(f, "kw_if"),
+            Rule::kw_else => write!(f, "kw_else"),
             Rule::kw_case => write!(f, "kw_case"),
             Rule::kw_return => write!(f, "kw_return"),
             Rule::kw_not => write!(f, "kw_not"),
@@ -30,7 +31,7 @@ impl Display for Rule {
             Rule::kw_exists => write!(f, "kw_exists"),
             Rule::kw_forall => write!(f, "kw_forall"),
             Rule::kw_choose => write!(f, "kw_choose"),
-            Rule::kw_where => write!(f, "kw_where"),
+            Rule::kw_print => write!(f, "kw_print"),
 
             Rule::plus => write!(f, "plus"),
             Rule::dash => write!(f, "dash"),
@@ -82,9 +83,21 @@ impl Display for Rule {
             Rule::iterator_list => write!(f, "iterator_list"),
             Rule::iterator => write!(f, "iterator"),
 
+            Rule::req_param => write!(f, "req_param"),
+            Rule::opt_param => write!(f, "opt_param"),
+            Rule::param_list => write!(f, "param_list"),
+            Rule::func_literal => write!(f, "func_literal"),
+
             Rule::gen_expr => write!(f, "gen_expr"),
-            Rule::expr => write!(f, "expr"),
+            Rule::ternary_expr => write!(f, "ternary_expr"),
+            Rule::select_expr => write!(f, "select_expr"),
+            Rule::block_expr => write!(f, "block_expr"),
             Rule::expr_list => write!(f, "expr_list"),
+
+            Rule::return_stmt => write!(f, "return_stmt"),
+            Rule::print_stmt => write!(f, "print_stmt"),
+            Rule::stmt_list => write!(f, "stmt_list"),
+
             rule => panic!("No display for rule: {:?}", rule),
         }
     }
@@ -101,7 +114,8 @@ pub fn pairs_structure(inner: Pairs<Rule>) -> String {
     if inner.len() == 0 {
         return format!("");
     }
-    let joined_string = inner.map(pair_structure)
+    let joined_string = inner
+        .map(pair_structure)
         .collect::<Vec<String>>()
         .join(", ");
     format!("([{joined_string}])")

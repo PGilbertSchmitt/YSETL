@@ -11,10 +11,9 @@ pub fn print_structure(rule: Rule, input: &str) {
         .unwrap()
         .next()
         .unwrap();
-    println!("{}", pair_structure(result))
+    println!("{}", pair_structure(result));
 }
 
 fn main() {
-    print_structure(Rule::expr, "{x:[x]=foo(y)}");
-    parse("{x+y:x,y in[a+b..b+a**2], a=foo( b), b = bar{g} | x > k, g<nu}");
+    parse("(x?, y) => { x + y; return 9; }");
 }

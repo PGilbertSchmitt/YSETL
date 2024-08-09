@@ -14,16 +14,23 @@ use super::ast::Iterator;
 use super::ast::IteratorList;
 use super::ast::PreOp;
 use super::ast::SingleIterator;
+use super::ast::Stmt;
+use super::ast::StmtList;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
 
 // TODO: Support better Err type with location information
 type YsetlParseError = String;
+type YsetlParseResult<T> = Result<T, YsetlParseError>;
 
-type ExprResult = Result<Expr, YsetlParseError>;
-type FormerResult = Result<Former, YsetlParseError>;
-type VecResult = Result<ExprList, YsetlParseError>;
-type SingleIteratorResult = Result<SingleIterator, YsetlParseError>;
+type StmtResult = YsetlParseResult<Stmt>;
+type ExprResult = YsetlParseResult<Expr>;
+type FormerResult = YsetlParseResult<Former>;
+type StmtListResult = YsetlParseResult<StmtList>;
+type ExprListResult = YsetlParseResult<ExprList>;
+type SingleIteratorResult = YsetlParseResult<SingleIterator>;
+
+type ParamList = (Vec<String>, Vec<String>);
 
 lazy_static::lazy_static! {
     static ref PRATT_PARSER: PrattParser<Rule> = {
@@ -92,21 +99,34 @@ pub fn parse(input: &str) {
         Ok(expr) => println!("output -> {:?}", expr),
         Err(reason) => println!("{reason}"),
     }
-
-    // match expr.as_rule() {
-    //     Rule::bin_expr => {
-    //         eval_infix(expr);
-    //     }
-    //     _ => unimplemented!(),
-    // }
 }
 
-fn parse_expr(expression: Pair<Rule>) -> ExprResult {
+fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
+    match stmt.as_rule() {
+        Rule::return_stmt => parse_return_stmt(stmt),
+        Rule::print_stmt => parse_print_stmt(stmt),
+        // Rule::assignment_stmt => ,
+        _ => Ok(Stmt::Expr(parse_expr(stmt)?)),
+    }
+}
+
+fn parse_expr(expr: Pair<Rule>) -> ExprResult {
+    match expr.as_rule() {
+        Rule::gen_expr => parse_bin_expr(expr),
+        // Rule::select_expr => parse_select_expr(expr),
+        Rule::block_expr => parse_block_expr(expr),
+        // Rule::ternary_expr => parse_ternary_expr(expr),
+        // Rule::switch_expr => parse_switch_expr(expr),
+        _ => unimplemented!(),
+    }
+}
+
+fn parse_bin_expr(bin_expr: Pair<Rule>) -> ExprResult {
     PRATT_PARSER
         .map_primary(parse_primary)
         .map_prefix(parse_pre_op)
         .map_infix(parse_infix)
-        .parse(expression.into_inner())
+        .parse(bin_expr.into_inner())
 }
 
 fn parse_primary(primary: Pair<Rule>) -> ExprResult {
@@ -121,6 +141,7 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::number => parse_number(primary),
         Rule::tuple_literal => parse_tuple_literal(primary),
         Rule::set_literal => parse_set_literal(primary),
+        Rule::func_literal => parse_function_literal(primary),
         rule => {
             println!("failed to process rule: {:?}", rule);
             unimplemented!()
@@ -147,7 +168,7 @@ fn parse_ident(pair: Pair<Rule>) -> ExprResult {
 // number([number_base, number_decimal, number_exp])
 fn parse_number(pair: Pair<Rule>) -> ExprResult {
     let span = pair.as_span();
-    let mut parts = pair.into_inner();//.map(|part| part.as_str());
+    let mut parts = pair.into_inner();
     let base = careful_unwrap(parts.next())?.as_str();
     let decimal = careful_unwrap(parts.next())?.as_str();
     let exponent = careful_unwrap(parts.next())?.as_str();
@@ -221,7 +242,7 @@ fn parse_former(pair: Pair<Rule>) -> FormerResult {
 }
 
 // expr_list([EXPR, EXPR, ..., EXPR])
-fn parse_expr_list(pair: Pair<Rule>) -> VecResult {
+fn parse_expr_list(pair: Pair<Rule>) -> ExprListResult {
     pair.into_inner().map(|inner| parse_expr(inner)).collect()
 }
 
@@ -240,7 +261,7 @@ fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
     };
 
     Ok(Former::Range {
-        inclusive: inclusive,
+        inclusive,
         start: Box::new(start),
         end: Box::new(end),
         step: None,
@@ -260,9 +281,9 @@ fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
     } = range
     {
         Ok(Former::Range {
-            inclusive: inclusive,
-            start: start,
-            end: end,
+            inclusive,
+            start,
+            end,
             step: Some(Box::new(step)),
         })
     } else {
@@ -276,7 +297,10 @@ fn parse_iterator_former(pair: Pair<Rule>) -> FormerResult {
     let mut parts = pair.into_inner();
     let expr = parse_expr(careful_unwrap(parts.next())?)?;
     let iterator = parse_iterator(careful_unwrap(parts.next())?)?;
-    Ok(Former::Iterator { output: Box::new(expr), iterator: iterator })
+    Ok(Former::Iterator {
+        output: Box::new(expr),
+        iterator,
+    })
 }
 
 fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
@@ -292,7 +316,7 @@ fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         _ => unimplemented!(),
     };
     Ok(Expr::Prefix {
-        op: op,
+        op,
         rhs: Box::new(rhs?),
     })
 }
@@ -327,7 +351,7 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         _ => unreachable!(),
     };
     Ok(Expr::Infix {
-        op: op,
+        op,
         lfs: Box::new(lhs?),
         rhs: Box::new(rhs?),
     })
@@ -350,15 +374,12 @@ fn parse_bound_list(pair: Pair<Rule>) -> BoundList {
 //  iterator([ITERATOR_LIST, EXPR_LIST?])
 fn parse_iterator(pair: Pair<Rule>) -> Result<Iterator, YsetlParseError> {
     let mut parts = pair.into_inner();
-    let iterator_list = parse_iterator_list(careful_unwrap(parts.next())?)?;
+    let iterators = parse_iterator_list(careful_unwrap(parts.next())?)?;
     let filters = match parts.next() {
         Some(exprs) => parse_expr_list(exprs)?,
         None => vec![],
     };
-    Ok(Iterator {
-        iterators: iterator_list,
-        filters: filters,
-    })
+    Ok(Iterator { iterators, filters })
 }
 
 // iterator_list([SINGLE_ITERATOR, SINGLE_ITERATOR, ..., SINGLE_ITERATOR])
@@ -369,9 +390,8 @@ fn parse_iterator_list(pair: Pair<Rule>) -> Result<IteratorList, YsetlParseError
 fn parse_single_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
     match pair.as_rule() {
         Rule::in_iterator => parse_in_iterator(pair),
-        Rule::select_iterator_single |
-        Rule::select_iterator_multi => parse_select_iterator(pair),
-        _ => unreachable!()
+        Rule::select_iterator_single | Rule::select_iterator_multi => parse_select_iterator(pair),
+        _ => unreachable!(),
     }
 }
 
@@ -380,7 +400,10 @@ fn parse_in_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
     let mut parts = pair.into_inner();
     let bound_list = parse_bound_list(careful_unwrap(parts.next())?);
     let expr = parse_expr(careful_unwrap(parts.next())?)?;
-    Ok(SingleIterator::In { bounds: bound_list, expr: expr })
+    Ok(SingleIterator::In {
+        bounds: bound_list,
+        expr,
+    })
 }
 
 // select_iterator_single([BOUND, IDENT, BOUND_LIST])
@@ -389,21 +412,99 @@ fn parse_select_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
     let single = pair.as_rule() == Rule::select_iterator_single;
     let mut parts = pair.into_inner();
     let bound = parse_bound(careful_unwrap(parts.next())?);
-    let collection_ident = careful_unwrap(parts.next())?.as_str().to_owned();
+    let collection = careful_unwrap(parts.next())?.as_str().to_owned();
     let bound_list = parse_bound_list(careful_unwrap(parts.next())?);
     if single {
         Ok(SingleIterator::SelectOne {
-            bound: bound,
-            collection: collection_ident,
-            list: bound_list
+            bound,
+            collection,
+            list: bound_list,
         })
     } else {
         Ok(SingleIterator::SelectMany {
             bound: bound,
-            collection: collection_ident,
-            list: bound_list
+            collection,
+            list: bound_list,
         })
     }
+}
+
+// TODO: Try implementing using iterator.try_fold and std::ops::ControlFlow
+// param_list([  ])
+// param_list([ opt_param, ..., opt_param  ])
+// param_list([ req_param, ..., req_param  ])
+// param_list([ req_param, ..., req_param, opt_param, ..., opt_param  ])
+// param_list([ ..., opt_param, req_param, ... ]) # VALID PARSE BUT INCORRECT
+fn parse_param_list(param_list: Pair<Rule>) -> Result<ParamList, YsetlParseError> {
+    let mut req = Vec::new();
+    let mut opt = Vec::new();
+    let mut parsing_opts = false;
+    for param_rule in param_list.into_inner() {
+        match param_rule.as_rule() {
+            Rule::req_param => {
+                if parsing_opts {
+                    return Err("Required function params cannot follow optional params".to_owned());
+                }
+                req.push(param_rule.as_str().to_owned())
+            }
+            Rule::opt_param => {
+                parsing_opts = true;
+                opt.push(param_rule.as_str().replace("?", ""))
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok((req, opt))
+}
+
+// func_literal([PARAM_LIST, EXPR])
+fn parse_function_literal(expr: Pair<Rule>) -> ExprResult {
+    let mut parts = expr.into_inner();
+    let (req_params, opt_params) = parse_param_list(careful_unwrap(parts.next())?)?;
+    let expr = parse_expr(careful_unwrap(parts.next())?)?;
+    Ok(Expr::Function {
+        req_params,
+        opt_params,
+        eval: Box::new(expr),
+    })
+}
+
+// block_expr([ STMT_LIST, EXPR? ])
+fn parse_block_expr(expr: Pair<Rule>) -> ExprResult {
+    let mut parts = expr.into_inner();
+    let stmts = parse_stmt_list(careful_unwrap(parts.next())?)?;
+    let implicit_return = parts
+        .next()
+        .map(parse_stmt)
+        .map_or(Ok(None), |v| v.map(|stmt| Some(Box::new(stmt))))?;
+    Ok(Expr::Block {
+        stmts,
+        implicit_return,
+    })
+}
+
+// return_stmt([  ])
+// return_stmt([ EXPR ])
+fn parse_return_stmt(stmt: Pair<Rule>) -> StmtResult {
+    stmt.into_inner()
+        .next()
+        .map(parse_expr)
+        .map_or(Ok(Stmt::Return(None)), |v| {
+            v.map(|expr| Stmt::Return(Some(expr)))
+        })
+}
+
+// print_stmt([ EXPR ])
+fn parse_print_stmt(stmt: Pair<Rule>) -> StmtResult {
+    let inner = careful_unwrap(stmt.into_inner().next())?;
+    let expr = parse_expr(inner)?;
+    Ok(Stmt::Print(expr))
+}
+
+// stmt_list([  ])
+// stmt_list([ STMT, STMT, ..., STMT ])
+fn parse_stmt_list(stmt_list: Pair<Rule>) -> StmtListResult {
+    stmt_list.into_inner().map(parse_stmt).collect()
 }
 
 fn span_start_str(span: Span) -> String {
@@ -413,7 +514,11 @@ fn span_start_str(span: Span) -> String {
 
 fn careful_unwrap(part: Option<Pair<Rule>>) -> Result<Pair<Rule>, YsetlParseError> {
     part.map_or_else(
-        || Err(String::from("Something horrific and unexpected has occured, please consult your doctor.")),
+        || {
+            Err(String::from(
+                "Something horrific and unexpected has occured, please consult your doctor.",
+            ))
+        },
         |part| Ok(part),
     )
 }
