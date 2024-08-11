@@ -64,7 +64,7 @@ mod tests {
         parse_is_ok(Rule::tuple_literal, "[1..10]");
         parse_is_ok(Rule::tuple_literal, "[1,3..10]");
         parse_is_ok(Rule::tuple_literal, "[x+2 : x in Z]");
-        parse_is_ok(Rule::tuple_literal, "[[x,y] : x in Z, y=W(x) | not x]");
+        parse_is_ok(Rule::tuple_literal, "[[x,y] : x in Z, y=W(x) -> not x]");
     }
 
     #[test]
@@ -75,7 +75,7 @@ mod tests {
         parse_is_ok(Rule::set_literal, "{1..10}");
         parse_is_ok(Rule::set_literal, "{1,3..10}");
         parse_is_ok(Rule::set_literal, "{x+2 : x in Z}");
-        parse_is_ok(Rule::set_literal, "{[x,y] : x in Z, y=W(x) | not x}");
+        parse_is_ok(Rule::set_literal, "{[x,y] : x in Z, y=W(x) -> not x}");
     }
 
     #[test]
@@ -84,8 +84,8 @@ mod tests {
         parse_is_ok(Rule::iterator, "x=f(y)");
         parse_is_ok(Rule::iterator, "[x,y]=f(z)");
         parse_is_ok(Rule::iterator, "x=Z(y),a=C(b)");
-        parse_is_ok(Rule::iterator, "x in Z | not x");
-        parse_is_ok(Rule::iterator, "x,y in[a+b..b+a**2], a=foo(b), b=bar{g} | x > k, g < u");
+        parse_is_ok(Rule::iterator, "x in Z -> not x");
+        parse_is_ok(Rule::iterator, "x,y in[a+b..b+a**2], a=foo(b), b=bar{g} -> x > k, g < u");
     }
 
     #[test]

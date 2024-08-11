@@ -15,5 +15,14 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    parse("(x?, y) => { x + y; return 9; }");
+    parse("switch (something) {
+        case x then :x,
+        case exists y in z where y == 2 then :y,
+        case ~ |> :z,
+    }");
+    parse("switch {
+        case x then :x,
+        case exists y in z where y == 2 then :y,
+        case ~ |> :z,
+    }");
 }

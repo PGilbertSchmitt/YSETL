@@ -13,9 +13,11 @@ use super::ast::Former;
 use super::ast::Iterator;
 use super::ast::IteratorList;
 use super::ast::PreOp;
+use super::ast::SelectOp;
 use super::ast::SingleIterator;
 use super::ast::Stmt;
 use super::ast::StmtList;
+use super::ast::SwitchCase;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
 
@@ -29,6 +31,7 @@ type FormerResult = YsetlParseResult<Former>;
 type StmtListResult = YsetlParseResult<StmtList>;
 type ExprListResult = YsetlParseResult<ExprList>;
 type SingleIteratorResult = YsetlParseResult<SingleIterator>;
+type CaseResult = YsetlParseResult<SwitchCase>;
 
 type ParamList = (Vec<String>, Vec<String>);
 
@@ -112,13 +115,19 @@ fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
 
 fn parse_expr(expr: Pair<Rule>) -> ExprResult {
     match expr.as_rule() {
+        Rule::nested_expr => parse_nested_expr(expr),
+        Rule::select_expr => parse_select_expr(expr),
+        Rule::ternary_expr => parse_ternary_expr(expr),
+        Rule::switch_expr => parse_switch_expr(expr),
         Rule::gen_expr => parse_bin_expr(expr),
-        // Rule::select_expr => parse_select_expr(expr),
         Rule::block_expr => parse_block_expr(expr),
-        // Rule::ternary_expr => parse_ternary_expr(expr),
-        // Rule::switch_expr => parse_switch_expr(expr),
         _ => unimplemented!(),
     }
+}
+
+fn parse_nested_expr(expr: Pair<Rule>) -> ExprResult {
+    let inner = careful_unwrap(expr.into_inner().next())?;
+    parse_expr(inner)
 }
 
 fn parse_bin_expr(bin_expr: Pair<Rule>) -> ExprResult {
@@ -143,8 +152,7 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::set_literal => parse_set_literal(primary),
         Rule::func_literal => parse_function_literal(primary),
         rule => {
-            println!("failed to process rule: {:?}", rule);
-            unimplemented!()
+            panic!("failed to process rule: {:?}", rule);
         }
     }
 }
@@ -467,6 +475,69 @@ fn parse_function_literal(expr: Pair<Rule>) -> ExprResult {
         opt_params,
         eval: Box::new(expr),
     })
+}
+
+// ternary_expr([EXPR, EXPR, EXPR])
+fn parse_ternary_expr(expr: Pair<Rule>) -> ExprResult {
+    let mut parts = expr.into_inner();
+    let condition = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
+    let consequence = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
+    let alternative = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
+    Ok(Expr::Ternary { condition, consequence, alternative, })
+}
+
+// case([EXPR, EXPR])
+// case([tilde, EXPR]) - The default case
+fn parse_switch_case(case: Pair<Rule>) -> CaseResult {
+    let mut parts = case.into_inner();
+    let condition_pair = careful_unwrap(parts.next())?;
+    let condition = match condition_pair.as_rule() {
+        Rule::tilde => None,
+        _ => Some(parse_expr(condition_pair)?)
+    };
+    let consequence = parse_expr(careful_unwrap(parts.next())?)?;
+    Ok(SwitchCase { condition, consequence })
+}
+
+// switch_expr([CASE, CASE, ..., CASE])
+// switch_expr([NESTED_EXPR, CASE, CASE, ..., CASE])
+fn parse_switch_expr(expr: Pair<Rule>) -> ExprResult {
+    let mut switch_condition: Option<Box<Expr>> = None;
+    let mut cases: Vec<SwitchCase> = vec![];
+
+    for part in expr.into_inner() {
+        match part.as_rule() {
+            Rule::nested_expr => {
+                switch_condition = Some(Box::new(parse_nested_expr(part)?));
+            },
+            Rule::case => {
+                cases.push(parse_switch_case(part)?);
+            },
+            _ => unreachable!(),
+        };
+    }
+    
+    Ok(Expr::Switch {
+        condition: switch_condition,
+        cases,
+    })
+}
+
+// select_expr(["exists", ITERATOR])
+// select_expr(["choose", ITERATOR])
+// select_expr(["forall", ITERATOR])
+fn parse_select_expr(expr: Pair<Rule>) -> ExprResult {
+    let mut parts = expr.into_inner();
+    let keyword = careful_unwrap(parts.next())?;
+    let op = match keyword.as_rule() {
+        Rule::kw_exists => SelectOp::EXISTS,
+        Rule::kw_choose => SelectOp::CHOOSE,
+        Rule::kw_forall => SelectOp::FORALL,
+        _ => unreachable!(),
+    };
+    let next_part = careful_unwrap(parts.next())?;
+    let iterator = parse_iterator(next_part)?;
+    Ok(Expr::Select { op, iterator })
 }
 
 // block_expr([ STMT_LIST, EXPR? ])

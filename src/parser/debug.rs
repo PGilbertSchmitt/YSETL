@@ -57,7 +57,7 @@ impl Display for Rule {
             Rule::dbl_lt => write!(f, "dbl_lt"),
             Rule::dbl_gt => write!(f, "dbl_gt"),
 
-            Rule::nested_expression => write!(f, "nested_expression"),
+            Rule::nested_expr => write!(f, "nested_expr"),
             Rule::atom_keep => write!(f, "atom_keep"),
             Rule::atom => write!(f, "atom"),
             Rule::number_base => write!(f, "number_base"),
@@ -89,6 +89,8 @@ impl Display for Rule {
             Rule::func_literal => write!(f, "func_literal"),
 
             Rule::gen_expr => write!(f, "gen_expr"),
+            Rule::case => write!(f, "case"),
+            Rule::switch_expr => write!(f, "switch_expr"),
             Rule::ternary_expr => write!(f, "ternary_expr"),
             Rule::select_expr => write!(f, "select_expr"),
             Rule::block_expr => write!(f, "block_expr"),

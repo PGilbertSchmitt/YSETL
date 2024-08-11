@@ -11,10 +11,13 @@ kw_false  =  { "false" }
 kw_newat  =  { "newat" }
 kw_fn     =  { "fn" }
 kw_return = _{ "return" }
-kw_if     = @{ "if" ~ __ }
-kw_else   = @{ "else" ~ __ }
-kw_case   = @{ "case" ~ __ }
+kw_switch = _{ "switch" }
+kw_case   = _{ "case " }
+kw_then   = _{ "then " }
+kw_if     = _{ "if " }
+kw_else   = _{ "else " }
 kw_print  = _{ "print" }
+kw_where  = _{ "where " }
 
 // Operator Keywords
 
@@ -40,27 +43,29 @@ kw_choose = @{ "choose" ~ __ }
 
 // Silent non-operator symbols
 
-semicolon = _{ ";" }
-colon     = _{ ":" }
-comma     = _{ "," }
-lodash    = _{ "_" }
-b_slash   = _{ "\\" }
-quote     = _{ "\"" }
-percent   = _{ "%" }
-pipe      = _{ "|" }
-dot       = _{ "." }
-qst       = _{ "?" }
-eq        = _{ "=" }
-l_brace   = _{ "{" }
-r_brace   = _{ "}" }
-l_paren   = _{ "(" }
-r_paren   = _{ ")" }
-l_brack   = _{ "[" }
-r_brack   = _{ "]" }
-arrow     = _{ "=>" }
-dbl_slash = _{ "//" }
-dbl_dot   = _{ ".." }
-tpl_dot   = _{ "..." }
+semicolon  = _{ ";" }
+colon      = _{ ":" }
+comma      = _{ "," }
+lodash     = _{ "_" }
+b_slash    = _{ "\\" }
+quote      = _{ "\"" }
+percent    = _{ "%" }
+pipe       = _{ "|" }
+dot        = _{ "." }
+qst        = _{ "?" }
+eq         = _{ "=" }
+l_brace    = _{ "{" }
+r_brace    = _{ "}" }
+l_paren    = _{ "(" }
+r_paren    = _{ ")" }
+l_brack    = _{ "[" }
+r_brack    = _{ "]" }
+arrow      = _{ "->" }
+fat_arrow  = _{ "=>" }
+tall_arrow = _{ "|>" }
+dbl_slash  = _{ "//" }
+dbl_dot    = _{ ".." }
+tpl_dot    = _{ "..." }
 
 // Direct operator symbols
 
@@ -90,7 +95,7 @@ dbl_gt   = { ">>" }
 
 // Operator Groups
 
-nested_expression = { l_paren ~ expr ~ r_paren }
+nested_expr = { l_paren ~ expr ~ r_paren }
 
 prefix_op = _{
   | dash
@@ -219,7 +224,8 @@ single_iterator        = _{
   | select_iterator_multi
 }
 iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* }
-iterator               =  { iterator_list ~ (pipe ~ expr_list)? }
+iterator_where         = _{ arrow | kw_where }
+iterator               = !{ iterator_list ~ (iterator_where ~ expr_list)? }
 
 // Functions
 
@@ -234,7 +240,7 @@ param = _{
 
 param_list = { l_paren ~ (param ~ (comma ~ param)*)? ~ r_paren }
 
-func_literal = { param_list ~ arrow ~ expr }
+func_literal = { param_list ~ fat_arrow ~ expr }
 
 // Expressions
 
@@ -250,14 +256,33 @@ primary = _{
   | set_literal
   | func_literal
   | ident // Must come after any keywords
-  | nested_expression
+  | nested_expr
 }
 
 gen_expr = !{ prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
 
 ternary_expr = !{ kw_if ~ expr ~ qst ~ expr ~ colon ~ expr }
 
-// switch_expr =
+// The only kinds of expression which can appear inside a case condition
+// are the non-conditional kinds which can be immediately executed without
+// jumps.
+case_expr = _{
+  | tilde
+  | select_expr
+  | gen_expr
+}
+case_then = _{
+  | tall_arrow
+  | kw_then
+}
+case = { kw_case ~ case_expr ~ case_then ~ expr }
+switch_expr = !{
+  kw_switch
+  ~ nested_expr?
+  ~ l_brace
+  ~ case ~ (comma ~ case)* ~ comma?
+  ~ r_brace
+}
 
 select_expr = !{ select_op ~ iterator }
 
@@ -265,7 +290,7 @@ block_expr = !{ l_brace ~ stmt_list ~ stmt? ~ r_brace }
 
 expr = _{
   | ternary_expr
-  // | switch_expr
+  | switch_expr
   | select_expr
   | block_expr
   | gen_expr

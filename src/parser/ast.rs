@@ -66,7 +66,7 @@ pub enum SingleIterator {
 
 #[derive(Debug)]
 pub struct Iterator {
-    pub iterators: Vec<SingleIterator>,
+    pub iterators: IteratorList,
     pub filters: ExprList,
 }
 
@@ -84,6 +84,19 @@ pub enum Former {
         output: Box<Expr>,
         iterator: Iterator,
     },
+}
+
+#[derive(Debug)]
+pub enum SelectOp {
+    EXISTS,
+    CHOOSE,
+    FORALL,
+}
+
+#[derive(Debug)]
+pub struct SwitchCase {
+    pub condition: Option<Expr>,
+    pub consequence: Expr,
 }
 
 #[derive(Debug)]
@@ -114,8 +127,21 @@ pub enum Expr {
         rhs: Box<Expr>,
     },
     Block {
-        stmts: Vec<Stmt>,
+        stmts: StmtList,
         implicit_return: Option<Box<Stmt>>,
+    },
+    Select {
+        op: SelectOp,
+        iterator: Iterator,
+    },
+    Ternary {
+        condition: Box<Expr>,
+        consequence: Box<Expr>,
+        alternative: Box<Expr>,
+    },
+    Switch {
+        condition: Option<Box<Expr>>,
+        cases: CaseList,
     },
 }
 
@@ -130,3 +156,4 @@ pub type ExprList = Vec<Expr>;
 pub type StmtList = Vec<Stmt>;
 pub type BoundList = Vec<Bound>;
 pub type IteratorList = Vec<SingleIterator>;
+pub type CaseList = Vec<SwitchCase>;
