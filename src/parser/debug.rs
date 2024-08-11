@@ -77,6 +77,7 @@ impl Display for Rule {
             Rule::interval_range_former => write!(f, "interval_range_former"),
 
             Rule::bound_list => write!(f, "bound_list"),
+            Rule::bound_rest => write!(f, "bound_rest"),
             Rule::in_iterator => write!(f, "in_iterator"),
             Rule::select_iterator_single => write!(f, "select_iterator_single"),
             Rule::select_iterator_multi => write!(f, "select_iterator_multi"),
@@ -98,6 +99,7 @@ impl Display for Rule {
 
             Rule::return_stmt => write!(f, "return_stmt"),
             Rule::print_stmt => write!(f, "print_stmt"),
+            Rule::assign_stmt => write!(f, "assign_stmt"),
             Rule::stmt_list => write!(f, "stmt_list"),
 
             rule => panic!("No display for rule: {:?}", rule),

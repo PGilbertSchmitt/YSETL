@@ -93,12 +93,12 @@ lazy_static::lazy_static! {
 }
 
 pub fn parse(input: &str) {
-    let result = YsetlParser::parse(Rule::expr, input)
+    let result = YsetlParser::parse(Rule::stmt, input)
         .unwrap()
         .next()
         .unwrap();
 
-    match parse_expr(result) {
+    match parse_stmt(result) {
         Ok(expr) => println!("output -> {:?}", expr),
         Err(reason) => println!("{reason}"),
     }
@@ -108,7 +108,7 @@ fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
     match stmt.as_rule() {
         Rule::return_stmt => parse_return_stmt(stmt),
         Rule::print_stmt => parse_print_stmt(stmt),
-        // Rule::assignment_stmt => ,
+        Rule::assign_stmt => parse_assign_stmt(stmt),
         _ => Ok(Stmt::Expr(parse_expr(stmt)?)),
     }
 }
@@ -370,6 +370,13 @@ fn parse_bound(pair: Pair<Rule>) -> Bound {
         Rule::tilde => Bound::Tilde,
         Rule::ident => Bound::Ident(pair.as_str().to_owned()),
         Rule::bound_list => Bound::List(parse_bound_list(pair)),
+
+        // bound_rest([])
+        // bound_rest([IDENT])
+        Rule::bound_rest => pair.into_inner().next().map_or(
+            Bound::Rest,
+            |inner| Bound::RestOver(inner.as_str().to_owned())
+        ),
         _ => unreachable!(),
     }
 }
@@ -570,6 +577,14 @@ fn parse_print_stmt(stmt: Pair<Rule>) -> StmtResult {
     let inner = careful_unwrap(stmt.into_inner().next())?;
     let expr = parse_expr(inner)?;
     Ok(Stmt::Print(expr))
+}
+
+// assign_stmt([BOUND, EXPR])
+fn parse_assign_stmt(stmt: Pair<Rule>) -> StmtResult {
+    let mut parts = stmt.into_inner();
+    let target = parse_bound(careful_unwrap(parts.next())?);
+    let value = parse_expr(careful_unwrap(parts.next())?)?;
+    Ok(Stmt::Assign { target, value })
 }
 
 // stmt_list([  ])

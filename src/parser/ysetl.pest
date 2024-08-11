@@ -16,8 +16,9 @@ kw_case   = _{ "case " }
 kw_then   = _{ "then " }
 kw_if     = _{ "if " }
 kw_else   = _{ "else " }
-kw_print  = _{ "print" }
+kw_print  = _{ "print " }
 kw_where  = _{ "where " }
+kw_let    = _{ "let " }
 
 // Operator Keywords
 
@@ -203,13 +204,16 @@ bound = _{
   | bound_list_wrapped
 }
 
+bound_rest = ${ tpl_dot ~ ident? }
+
 bound_list_inner = _{
   | tilde
   | ident
+  | bound_rest
   | bound_list_wrapped
 }
 
-bound_list         =  { bound_list_inner ~ (comma ~ bound_list_inner)* }
+bound_list         =  { bound_list_inner ~ (comma ~ bound_list_inner)* ~ comma? }
 bound_list_wrapped = _{ l_brack ~ bound_list? ~ r_brack }
 
 // Iterators
@@ -300,14 +304,14 @@ expr_list = !{ expr ~ (comma ~ expr)* }
 
 // Statements
 
-return_stmt = ${ kw_return ~ (__ ~ expr)? }
-
-print_stmt = ${ kw_print ~ __ ~ expr }
+return_stmt  = ${ kw_return ~ (__ ~ expr)? }
+print_stmt   = ${ kw_print ~ expr }
+assign_stmt  =  { kw_let ~ bound ~ eq ~ expr }
 
 stmt = _{
   | return_stmt
   | print_stmt
-  // | assignment_stmt
+  | assign_stmt
   | expr
 }
 

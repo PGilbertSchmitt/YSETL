@@ -15,14 +15,5 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    parse("switch (something) {
-        case x then :x,
-        case exists y in z where y == 2 then :y,
-        case ~ |> :z,
-    }");
-    parse("switch {
-        case x then :x,
-        case exists y in z where y == 2 then :y,
-        case ~ |> :z,
-    }");
+    parse("let [..., x, ...y] = foo");
 }

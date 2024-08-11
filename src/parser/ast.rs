@@ -44,6 +44,8 @@ pub enum Bound {
     Tilde,
     Ident(String),
     List(BoundList),
+    Rest,
+    RestOver(String),
 }
 
 #[derive(Debug)]
@@ -150,6 +152,10 @@ pub enum Stmt {
     Expr(Expr),
     Return(Option<Expr>),
     Print(Expr),
+    Assign {
+        target: Bound,
+        value: Expr,
+    },
 }
 
 pub type ExprList = Vec<Expr>;
