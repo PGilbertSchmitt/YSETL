@@ -13,7 +13,7 @@ mod tests {
     fn parse_is_ok(rule: Rule, input: &str) {
         match YsetlParser::parse(rule, input) {
             Ok(_) => assert!(true),
-            Err(_) => assert!(false, "Error parsing rule '{rule}' for input '{input}'")
+            Err(_) => assert!(false, "Error parsing rule '{rule}' for input '{input}'"),
         }
     }
 
@@ -85,7 +85,10 @@ mod tests {
         parse_is_ok(Rule::iterator, "[x,y]=f(z)");
         parse_is_ok(Rule::iterator, "x=Z(y),a=C(b)");
         parse_is_ok(Rule::iterator, "x in Z -> not x");
-        parse_is_ok(Rule::iterator, "x,y in[a+b..b+a**2], a=foo(b), b=bar{g} -> x > k, g < u");
+        parse_is_ok(
+            Rule::iterator,
+            "x,y in[a+b..b+a**2], a=foo(b), b=bar{g} -> x > k, g < u",
+        );
     }
 
     #[test]

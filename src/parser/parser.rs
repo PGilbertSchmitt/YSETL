@@ -373,10 +373,9 @@ fn parse_bound(pair: Pair<Rule>) -> Bound {
 
         // bound_rest([])
         // bound_rest([IDENT])
-        Rule::bound_rest => pair.into_inner().next().map_or(
-            Bound::Rest,
-            |inner| Bound::RestOver(inner.as_str().to_owned())
-        ),
+        Rule::bound_rest => pair.into_inner().next().map_or(Bound::Rest, |inner| {
+            Bound::RestOver(inner.as_str().to_owned())
+        }),
         _ => unreachable!(),
     }
 }
@@ -490,7 +489,11 @@ fn parse_ternary_expr(expr: Pair<Rule>) -> ExprResult {
     let condition = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
     let consequence = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
     let alternative = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
-    Ok(Expr::Ternary { condition, consequence, alternative, })
+    Ok(Expr::Ternary {
+        condition,
+        consequence,
+        alternative,
+    })
 }
 
 // case([EXPR, EXPR])
@@ -500,10 +503,13 @@ fn parse_switch_case(case: Pair<Rule>) -> CaseResult {
     let condition_pair = careful_unwrap(parts.next())?;
     let condition = match condition_pair.as_rule() {
         Rule::tilde => None,
-        _ => Some(parse_expr(condition_pair)?)
+        _ => Some(parse_expr(condition_pair)?),
     };
     let consequence = parse_expr(careful_unwrap(parts.next())?)?;
-    Ok(SwitchCase { condition, consequence })
+    Ok(SwitchCase {
+        condition,
+        consequence,
+    })
 }
 
 // switch_expr([CASE, CASE, ..., CASE])
@@ -516,14 +522,14 @@ fn parse_switch_expr(expr: Pair<Rule>) -> ExprResult {
         match part.as_rule() {
             Rule::nested_expr => {
                 switch_condition = Some(Box::new(parse_nested_expr(part)?));
-            },
+            }
             Rule::case => {
                 cases.push(parse_switch_case(part)?);
-            },
+            }
             _ => unreachable!(),
         };
     }
-    
+
     Ok(Expr::Switch {
         condition: switch_condition,
         cases,
