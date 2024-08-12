@@ -13,5 +13,8 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    parse("let [..., x, ...y] = foo");
+    parse("foo[a..b]");
+    parse("foo[a..]");
+    parse("foo[..b]");
+    parse("foo[...]");
 }

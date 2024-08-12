@@ -227,7 +227,7 @@ single_iterator        = _{
   | select_iterator_single
   | select_iterator_multi
 }
-iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* }
+iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* ~ comma? }
 iterator_where         = _{ arrow | kw_where }
 iterator               = !{ iterator_list ~ (iterator_where ~ expr_list)? }
 
@@ -242,9 +242,23 @@ param = _{
   | req_param
 }
 
-param_list = { l_paren ~ (param ~ (comma ~ param)*)? ~ r_paren }
+param_list = { l_paren ~ (param ~ (comma ~ param)*)? ~ comma? ~ r_paren }
 
 func_literal = { param_list ~ fat_arrow ~ expr }
+
+// Postfix Selectors
+
+
+fn_call     = { l_paren ~ expr_list? ~ r_paren }
+index_call  = { l_brack ~ expr ~ r_brack }
+pick_call   = { l_brace ~ expr_list ~ r_brace }
+slice_call  = { l_brack ~ expr? ~ range_op ~ expr? ~ r_brack }
+postfix_selector = _{
+  | fn_call
+  | index_call
+  | slice_call
+  | pick_call
+}
 
 // Expressions
 
@@ -263,7 +277,8 @@ primary = _{
   | nested_expr
 }
 
-gen_expr = !{ prefix_op* ~ primary ~ (binary_op ~ prefix_op* ~ primary)* }
+expr_unit = _{ prefix_op* ~ primary ~ postfix_selector* }
+gen_expr = !{ expr_unit ~ (binary_op ~ expr_unit)* }
 
 ternary_expr = !{ kw_if ~ expr ~ qst ~ expr ~ colon ~ expr }
 
@@ -300,7 +315,7 @@ expr = _{
   | gen_expr
 }
 
-expr_list = !{ expr ~ (comma ~ expr)* }
+expr_list = !{ expr ~ (comma ~ expr)* ~ comma? }
 
 // Statements
 

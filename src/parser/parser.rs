@@ -12,7 +12,9 @@ use super::ast::ExprList;
 use super::ast::Former;
 use super::ast::Iterator;
 use super::ast::IteratorList;
+use super::ast::Postfix;
 use super::ast::PreOp;
+use super::ast::Range;
 use super::ast::SelectOp;
 use super::ast::SingleIterator;
 use super::ast::Stmt;
@@ -32,6 +34,7 @@ type StmtListResult = YsetlParseResult<StmtList>;
 type ExprListResult = YsetlParseResult<ExprList>;
 type SingleIteratorResult = YsetlParseResult<SingleIterator>;
 type CaseResult = YsetlParseResult<SwitchCase>;
+type PostfixResult = YsetlParseResult<Postfix>;
 
 type ParamList = (Vec<String>, Vec<String>);
 
@@ -89,6 +92,10 @@ lazy_static::lazy_static! {
                 Op::prefix(Rule::dollar) |
                 Op::prefix(Rule::tilde) |
                 Op::prefix(Rule::amp))
+            .op(Op::postfix(Rule::fn_call) |
+                Op::postfix(Rule::index_call) |
+                Op::postfix(Rule::slice_call) |
+                Op::postfix(Rule::pick_call))
     };
 }
 
@@ -134,6 +141,7 @@ fn parse_bin_expr(bin_expr: Pair<Rule>) -> ExprResult {
     PRATT_PARSER
         .map_primary(parse_primary)
         .map_prefix(parse_pre_op)
+        .map_postfix(parse_postfix)
         .map_infix(parse_infix)
         .parse(bin_expr.into_inner())
 }
@@ -254,9 +262,13 @@ fn parse_expr_list(pair: Pair<Rule>) -> ExprListResult {
     pair.into_inner().map(|inner| parse_expr(inner)).collect()
 }
 
+fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
+    Ok(Former::Range(parse_range(pair)?))
+}
+
 // range_former([EXPR, exclusive_range_op, EXPR])
 // range_former([EXPR, inclusive_range_op, EXPR])
-fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
+fn parse_range(pair: Pair<Rule>) -> Result<Range, YsetlParseError> {
     let mut parts = pair.into_inner();
     let start = parse_expr(careful_unwrap(parts.next())?)?;
     let op = careful_unwrap(parts.next())?;
@@ -268,7 +280,7 @@ fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
         _ => unreachable!(),
     };
 
-    Ok(Former::Range {
+    Ok(Range {
         inclusive,
         start: Box::new(start),
         end: Box::new(end),
@@ -280,25 +292,9 @@ fn parse_range_former(pair: Pair<Rule>) -> FormerResult {
 fn parse_interval_range_former(pair: Pair<Rule>) -> FormerResult {
     let mut parts = pair.into_inner();
     let step = parse_expr(careful_unwrap(parts.next())?)?;
-    let range = parse_range_former(careful_unwrap(parts.next())?)?;
-    if let Former::Range {
-        inclusive,
-        start,
-        end,
-        ..
-    } = range
-    {
-        Ok(Former::Range {
-            inclusive,
-            start,
-            end,
-            step: Some(Box::new(step)),
-        })
-    } else {
-        Err(String::from(
-            "Unexpected error while parsing interval range",
-        ))
-    }
+    let mut range = parse_range(careful_unwrap(parts.next())?)?;
+    range.step = Some(Box::new(step));
+    Ok(Former::Range(range))
 }
 
 fn parse_iterator_former(pair: Pair<Rule>) -> FormerResult {
@@ -327,6 +323,75 @@ fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         op,
         rhs: Box::new(rhs?),
     })
+}
+
+fn parse_postfix(lhs: ExprResult, postfix: Pair<Rule>) -> ExprResult {
+    let postfix = match postfix.as_rule() {
+        Rule::fn_call => parse_fn_call(postfix)?,
+        Rule::index_call => parse_index_call(postfix)?,
+        Rule::slice_call => parse_range_call(postfix)?,
+        Rule::pick_call => parse_pick_call(postfix)?,
+        _ => unreachable!(),
+    };
+    Ok(Expr::Postfix {
+        lhs: Box::new(lhs?),
+        postfix,
+    })
+}
+
+// fn_call([])
+// fn_call([EXPR_LIST])
+fn parse_fn_call(postfix: Pair<Rule>) -> PostfixResult {
+    Ok(Postfix::Call(match postfix.into_inner().next() {
+        Some(expr_list) => parse_expr_list(expr_list)?,
+        None => Vec::new(),
+    }))
+}
+
+// index_call([EXPR])
+fn parse_index_call(postfix: Pair<Rule>) -> PostfixResult {
+    let expr = parse_expr(careful_unwrap(postfix.into_inner().next())?)?;
+    Ok(Postfix::Index(Box::new(expr)))
+}
+
+// range_call([EXPR, RANGE_OP, EXPR])
+// range_call([EXPR, RANGE_OP])
+// range_call([RANGE_OP, EXPR])
+// range_call([RANGE_OP])
+fn parse_range_call(postfix: Pair<Rule>) -> PostfixResult {
+    let mut inclusive = true;
+    let mut processed_op = false;
+    let mut start: Option<Box<Expr>> = None;
+    let mut end: Option<Box<Expr>> = None;
+
+    // Kinda the ugliest code in here for me, but I couldn't find a more elegent
+    // grammar for the optional expressions that would have made this prettier.
+    for part in postfix.into_inner() {
+        match part.as_rule() {
+            Rule::inclusive_range_op => {
+                processed_op = true;
+            }
+            Rule::exclusive_range_op => {
+                processed_op = true;
+                inclusive = false;
+            }
+            _ => {
+                let expr = Some(Box::new(parse_expr(part)?));
+                if processed_op {
+                    end = expr;
+                } else {
+                    start = expr;
+                }
+            }
+        }
+    };
+    Ok(Postfix::Slice { inclusive, start, end })
+}
+
+// pick_call([EXPR_LIST])
+fn parse_pick_call(postfix: Pair<Rule>) -> PostfixResult {
+    let args = careful_unwrap(postfix.into_inner().next())?;
+    Ok(Postfix::Pick(parse_expr_list(args)?))
 }
 
 fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {

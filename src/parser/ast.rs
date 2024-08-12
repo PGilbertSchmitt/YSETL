@@ -73,15 +73,18 @@ pub struct Iterator {
 }
 
 #[derive(Debug)]
+pub struct Range {
+    pub inclusive: bool,
+    pub start: Box<Expr>,
+    pub end: Box<Expr>,
+    pub step: Option<Box<Expr>>,
+}
+
+#[derive(Debug)]
 pub enum Former {
     Empty,
     Literal(ExprList),
-    Range {
-        inclusive: bool,
-        start: Box<Expr>,
-        end: Box<Expr>,
-        step: Option<Box<Expr>>,
-    },
+    Range(Range),
     Iterator {
         output: Box<Expr>,
         iterator: Iterator,
@@ -99,6 +102,18 @@ pub enum SelectOp {
 pub struct SwitchCase {
     pub condition: Option<Expr>,
     pub consequence: Expr,
+}
+
+#[derive(Debug)]
+pub enum Postfix {
+    Call(ExprList),
+    Index(Box<Expr>),
+    Slice {
+        inclusive: bool,
+        start: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+    },
+    Pick(ExprList),
 }
 
 #[derive(Debug)]
@@ -127,6 +142,10 @@ pub enum Expr {
     Prefix {
         op: PreOp,
         rhs: Box<Expr>,
+    },
+    Postfix {
+        lhs: Box<Expr>,
+        postfix: Postfix,
     },
     Block {
         stmts: StmtList,

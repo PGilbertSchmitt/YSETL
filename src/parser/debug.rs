@@ -88,6 +88,11 @@ impl Display for Rule {
             Rule::opt_param => write!(f, "opt_param"),
             Rule::param_list => write!(f, "param_list"),
             Rule::func_literal => write!(f, "func_literal"),
+            
+            Rule::fn_call => write!(f, "fn_call"),
+            Rule::index_call => write!(f, "index_call"),
+            Rule::slice_call => write!(f, "range_call"),
+            Rule::pick_call => write!(f, "pick_call"),
 
             Rule::gen_expr => write!(f, "gen_expr"),
             Rule::case => write!(f, "case"),
