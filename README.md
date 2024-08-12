@@ -28,10 +28,10 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Floats
 - [x] Strings
 - [x] Atoms
-- [ ] Tuples (Lists)
-- [ ] Sets
+- [x] Tuples (Lists)
+- [x] Sets
 - [ ] Maps (specialized Sets)
-- [ ] Functions
+- [x] Functions
 - [ ] Function Maps (specialized Maps)
 
 ### Operations
@@ -48,4 +48,4 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 ### Other
 - [ ] REPL
 - [ ] IO
-- [ ] Separate Compilation and Execute steps (aka running prebuilt binaries)
+- [ ] Separate Compilation and Execute steps (executing pre-compiled bytecode bundles)
