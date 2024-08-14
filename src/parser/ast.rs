@@ -136,7 +136,7 @@ pub enum Expr {
     },
     Infix {
         op: BinOp,
-        lfs: Box<Expr>,
+        lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
     Prefix {

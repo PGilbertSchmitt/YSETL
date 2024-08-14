@@ -99,16 +99,13 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn parse(input: &str) {
-    let result = YsetlParser::parse(Rule::stmt, input)
+pub fn parse_expr_unwrap(input: &str) -> Expr {
+    let result = YsetlParser::parse(Rule::expr, input)
         .unwrap()
         .next()
         .unwrap();
 
-    match parse_stmt(result) {
-        Ok(expr) => println!("output -> {:?}", expr),
-        Err(reason) => println!("{reason}"),
-    }
+    parse_expr(result).unwrap()
 }
 
 fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
@@ -384,8 +381,12 @@ fn parse_range_call(postfix: Pair<Rule>) -> PostfixResult {
                 }
             }
         }
-    };
-    Ok(Postfix::Slice { inclusive, start, end })
+    }
+    Ok(Postfix::Slice {
+        inclusive,
+        start,
+        end,
+    })
 }
 
 // pick_call([EXPR_LIST])
@@ -425,7 +426,7 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
     };
     Ok(Expr::Infix {
         op,
-        lfs: Box::new(lhs?),
+        lhs: Box::new(lhs?),
         rhs: Box::new(rhs?),
     })
 }
