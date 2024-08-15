@@ -99,6 +99,15 @@ lazy_static::lazy_static! {
     };
 }
 
+pub fn parse_program(input: &str) -> StmtList {
+    let result = YsetlParser::parse(Rule::raw_program, input)
+        .unwrap()
+        .next()
+        .unwrap();
+    
+    parse_stmt_list(result).unwrap()
+}
+
 pub fn parse_expr_unwrap(input: &str) -> Expr {
     let result = YsetlParser::parse(Rule::expr, input)
         .unwrap()

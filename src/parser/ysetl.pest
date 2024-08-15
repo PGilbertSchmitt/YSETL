@@ -331,3 +331,7 @@ stmt = _{
 }
 
 stmt_list = { (stmt ~ semicolon)* }
+
+// Program
+
+raw_program = { stmt_list }
