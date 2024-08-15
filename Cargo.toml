@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bytes = "1.7.1"
 lazy_static = "1.5.0"
 pest = "2.7.11"
 pest_derive = "2.7.11"

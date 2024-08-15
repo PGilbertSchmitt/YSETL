@@ -27,11 +27,11 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Integers
 - [x] Floats
 - [x] Strings
-- [x] Atoms
-- [x] Tuples (Lists)
-- [x] Sets
+- [ ] Atoms
+- [ ] Tuples (Lists)
+- [ ] Sets
 - [ ] Maps (specialized Sets)
-- [x] Functions
+- [ ] Functions
 - [ ] Function Maps (specialized Maps)
 
 ### Operations
