@@ -107,6 +107,8 @@ impl Display for Rule {
             Rule::assign_stmt => write!(f, "assign_stmt"),
             Rule::stmt_list => write!(f, "stmt_list"),
 
+            Rule::raw_program => write!(f, "raw_program"),
+
             rule => panic!("No display for rule: {:?}", rule),
         }
     }

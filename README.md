@@ -35,7 +35,7 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [ ] Function Maps (specialized Maps)
 
 ### Operations
-- [ ] Arithmetic
+- [x] Arithmetic
 - [ ] Control flow
 - [ ] Global variables
 - [ ] Local variables

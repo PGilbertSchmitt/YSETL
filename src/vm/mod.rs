@@ -1,15 +1,27 @@
 use std::io::Cursor;
 
+use binop::execute_binop;
 use bytes::{Buf, Bytes};
 
-use crate::compiler::Bytecode;
-use crate::object::{BaseObject, Object};
+use crate::compiler::bytecode::Bytecode;
+use crate::object::{BaseObject, Object, ObjectOps};
 use crate::op;
 
-pub mod frame;
 pub mod binop;
+pub mod frame;
 
 const MAX_STACK_SIZE: usize = 4096;
+
+trait Stack {
+    fn pop_one(&mut self) -> Object;
+}
+
+impl Stack for Vec<Object> {
+    fn pop_one(&mut self) -> Object {
+        self.pop()
+            .unwrap_or_else(|| panic!("Called pop on an empty stack"))
+    }
+}
 
 pub struct VM {
     constants: Vec<Object>,
@@ -27,7 +39,7 @@ impl VM {
     }
 
     /** Consume the VM to execute the entirety of the VM state */
-    pub fn run(mut self) -> Option<Object> {
+    pub fn run(mut self) {
         let cur_ins = self.instructions;
         let mut ptr = Cursor::new(cur_ins);
 
@@ -42,21 +54,43 @@ impl VM {
                 op::NULL => self.stack.push(BaseObject::Null.wrap()),
                 op::TRUE => self.stack.push(BaseObject::True.wrap()),
                 op::FALSE => self.stack.push(BaseObject::False.wrap()),
-                op::ADD => {
-                    let right = self.stack.pop().unwrap();
-                    let left = self.stack.pop().unwrap();
-                    match (left.as_ref(), right.as_ref()) {
-                        (&BaseObject::Int(left), &BaseObject::Int(right)) => {
-                            self.stack.push(BaseObject::Int(left + right).wrap());
-                        }
-                        _ => unimplemented!()
-                    }
+
+                op::POP => {
+                    self.stack.pop_one();
                 }
-                _ => unimplemented!()
+
+                op::PRINT => {
+                    println!("{}", self.stack.pop_one().to_s());
+                }
+
+                // Binops
+                op::NULLCOEL
+                | op::TAKE
+                | op::EXP
+                | op::MULT
+                | op::DIV
+                | op::MOD
+                | op::ADD
+                | op::SUBTRACT
+                | op::WITH_BIT_LEFT
+                | op::LESS_BIT_RIGHT
+                | op::BIT_AND
+                | op::BIT_OR
+                | op::BIT_XOR
+                | op::IN
+                | op::NOTIN
+                | op::SUBSET
+                | op::LT
+                | op::LTEQ
+                | op::EQ
+                | op::NEQ => {
+                    let right = self.stack.pop_one();
+                    let left = self.stack.pop_one();
+                    self.stack.push(execute_binop(op, left, right))
+                }
+                _ => unimplemented!(),
             }
         }
-        
-        self.stack.pop()
     }
 
     // pub fn into_iter(self) -> VMIterator {

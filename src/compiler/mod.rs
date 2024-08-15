@@ -1,19 +1,16 @@
 use crate::{
     object::BaseObject,
-    parser::ast::{BinOp, Expr, Stmt},
+    parser::ast::{BinOp, Expr, Stmt, StmtList},
 };
-
 use super::op::{self, Op};
-use bytes::{BufMut, Bytes, BytesMut};
+use bytecode::Bytecode;
+use bytes::{BufMut, BytesMut};
+
+pub mod bytecode;
 
 pub struct Compiler {
     instructions: BytesMut,
     constants: Vec<BaseObject>,
-}
-
-pub struct Bytecode {
-    pub instructions: Bytes,
-    pub constants: Vec<BaseObject>,
 }
 
 impl Compiler {
@@ -24,7 +21,37 @@ impl Compiler {
         }
     }
 
-    pub fn compile_expr(&mut self, node: Expr) {
+    pub fn compile_program(mut self, stmts: StmtList) -> Bytecode {
+        self.compile_stmt_list(stmts);
+        self.finish()
+    }
+
+    pub fn finish(self) -> Bytecode {
+        Bytecode {
+            instructions: self.instructions.freeze(),
+            constants: self.constants,
+        }
+    }
+
+    fn compile_stmt_list(&mut self, stmts: StmtList) {
+        stmts.into_iter().for_each(|stmt| self.compile_stmt(stmt));
+    }
+
+    fn compile_stmt(&mut self, node: Stmt) {
+        match node {
+            Stmt::Expr(expr) => {
+                self.compile_expr(expr);
+                self.emit(op::POP);
+            }
+            Stmt::Print(expr) => {
+                self.compile_expr(expr);
+                self.emit(op::PRINT);
+            }
+            _ => unimplemented!(),
+        }
+    }
+
+    fn compile_expr(&mut self, node: Expr) {
         match node {
             Expr::Null => self.emit(op::NULL),
             Expr::True => self.emit(op::TRUE),
@@ -42,33 +69,12 @@ impl Compiler {
                 self.emit_with_u16(op::CONST, const_ptr);
             }
             Expr::Infix { op, lhs, rhs } => {
-                self.compile_expr(*rhs);
                 self.compile_expr(*lhs);
+                self.compile_expr(*rhs);
                 self.emit(binop_to_op(op));
             }
             _ => unimplemented!(),
         };
-    }
-
-    pub fn compile_stmt(&mut self, node: Stmt) {
-        match node {
-            Stmt::Expr(expr) => {
-                self.compile_expr(expr);
-                self.emit(op::POP);
-            }
-            Stmt::Print(expr) => {
-                self.compile_expr(expr);
-                self.emit(op::PRINT);
-            }
-            _ => unimplemented!(),
-        }
-    }
-
-    pub fn finish(self) -> Bytecode {
-        Bytecode {
-            instructions: self.instructions.freeze(),
-            constants: self.constants,
-        }
     }
 
     fn emit(&mut self, code: Op) {
@@ -90,13 +96,32 @@ impl Compiler {
             .try_into()
             .unwrap_or_else(|_| panic!("Too many constants were generated"))
     }
-
-    
 }
 
 fn binop_to_op(binop: BinOp) -> Op {
     match binop {
+        BinOp::Nullcoel => op::NULLCOEL,
+        BinOp::Take => op::TAKE,
+        BinOp::Exp => op::EXP,
+        BinOp::Mult => op::MULT,
+        BinOp::Div => op::DIV,
+        BinOp::Mod => op::MOD,
         BinOp::Add => op::ADD,
-        _ => unimplemented!(),
+        BinOp::Subtract => op::SUBTRACT,
+        BinOp::WithBitLeft => op::WITH_BIT_LEFT,
+        BinOp::LessBitRight => op::LESS_BIT_RIGHT,
+        BinOp::BitAnd => op::BIT_AND,
+        BinOp::BitOr => op::BIT_OR,
+        BinOp::BitXor => op::BIT_XOR,
+        BinOp::In => op::IN,
+        BinOp::Notin => op::NOTIN,
+        BinOp::Subset => op::SUBSET,
+        BinOp::Lt | BinOp::Gt => op::LT,
+        BinOp::Lteq | BinOp::Gteq => op::LTEQ,
+        BinOp::Eq => op::EQ,
+        BinOp::Neq => op::NEQ,
+        BinOp::And => op::LOGICAL_AND,
+        BinOp::Or => op::LOGICAL_OR,
+        BinOp::Impl => op::LOGICAL_IMPL,
     }
 }

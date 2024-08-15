@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 pub trait ObjectOps {
     fn to_s(&self) -> String;
+    fn to_debug_string(&self) -> String;
 }
 
 #[derive(PartialEq, Debug)]
@@ -26,6 +27,17 @@ impl ObjectOps for BaseObject {
             Self::Null => String::from("null"),
             Self::False => String::from("false"),
             Self::True => String::from("true"),
+            Self::Int(x) => x.to_string(),
+            Self::Float(x) => x.to_string(),
+            Self::String(val) => val.clone(),
+        }
+    }
+
+    fn to_debug_string(&self) -> String {
+        match self {
+            Self::Null => String::from("null"),
+            Self::False => String::from("false"),
+            Self::True => String::from("true"),
             Self::Int(x) => format!("i{x}"),
             Self::Float(x) => format!("f{x}"),
             Self::String(val) => format!("\"{val}\""),
@@ -45,5 +57,9 @@ impl Object {
 impl ObjectOps for Object {
     fn to_s(&self) -> String {
         self.0.to_s()
+    }
+
+    fn to_debug_string(&self) -> String {
+        self.0.to_debug_string()
     }
 }

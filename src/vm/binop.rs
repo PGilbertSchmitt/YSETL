@@ -3,14 +3,18 @@ use crate::op::debug::lookup;
 use crate::op::{self, Op};
 
 pub fn from_bool(val: bool) -> BaseObject {
-    if val { BaseObject::True } else { BaseObject::False }
+    if val {
+        BaseObject::True
+    } else {
+        BaseObject::False
+    }
 }
 
 pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
     match (left.as_ref(), right.as_ref()) {
         (&BaseObject::Int(left), &BaseObject::Int(right)) => {
             execute_int_math(op, left, right).wrap()
-        },
+        }
         (&BaseObject::Float(left), &BaseObject::Float(right)) => {
             execute_float_math(op, left, right).wrap()
         }
@@ -23,9 +27,9 @@ pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
         _ => panic!(
             "Could not perform op {} on types {} and {}",
             lookup(op).0,
-            left.to_s(),
-            right.to_s(),
-        )
+            left.to_debug_string(),
+            right.to_debug_string(),
+        ),
     }
 }
 
@@ -34,6 +38,7 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
         op::ADD => BaseObject::Int(left + right),
         op::SUBSET => BaseObject::Int(left - right),
         op::MULT => BaseObject::Int(left * right),
+        op::EXP => BaseObject::Int(left.pow(right as u32)),
         op::DIV => {
             if right == 0 {
                 panic!("Divide by zero error!");
@@ -60,6 +65,7 @@ fn execute_float_math(op: Op, left: f64, right: f64) -> BaseObject {
         op::ADD => BaseObject::Float(left + right),
         op::SUBSET => BaseObject::Float(left - right),
         op::MULT => BaseObject::Float(left * right),
+        op::EXP => BaseObject::Float(left.powf(right)),
         op::DIV => {
             if right == 0.0 {
                 panic!("Divide by zero error!");

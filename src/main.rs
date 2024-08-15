@@ -1,9 +1,8 @@
 use compiler::Compiler;
-use object::ObjectOps;
 use parser::{
     debug::pair_structure,
     grammar::{Rule, YsetlParser},
-    parser::parse_expr_unwrap,
+    parser::parse_program,
 };
 use vm::VM;
 
@@ -20,15 +19,17 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_expr_unwrap("3 + 4 + 8");
-    let mut comp = Compiler::new();
-    comp.compile_expr(ast);
-    let bc = comp.finish();
+    let ast = parse_program("print 11 + 13 ** 2;\nprint 3 + 4 + 8;");
+    let comp = Compiler::new();
+    let bc = comp.compile_program(ast);
     println!("Results:");
-    println!("Instructions: {:?}", bc.instructions);
     println!("Constants: {:?}", bc.constants);
+    println!("\n:: START INSTRUCTIONS ::");
+    bc.print_bytecode();
+    println!("::  END INSTRUCTIONS  ::\n");
 
+    println!(":: START EXECUTION ::");
     let vm = VM::new(bc);
-    let result = vm.run();
-    println!("Evaluates to: {}", result.unwrap().to_s());
+    vm.run();
+    println!(":: DONE EXECUTION  ::");
 }

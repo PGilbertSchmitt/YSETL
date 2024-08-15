@@ -334,4 +334,4 @@ stmt_list = { (stmt ~ semicolon)* }
 
 // Program
 
-raw_program = { stmt_list }
+raw_program = { SOI ~ stmt_list ~ EOI }
