@@ -30,6 +30,14 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         super::EQ => ("EQ", &[]),
         super::NEQ => ("NEQ", &[]),
 
+        super::NOT => ("NOT", &[]),
+        super::NEGATE => ("NEGATE", &[]),
+        super::SIZE => ("SIZE", &[]),
+        super::HEAD => ("HEAD", &[]),
+        super::LAST => ("LAST", &[]),
+        super::TAIL => ("TAIL", &[]),
+        super::INIT => ("INIT", &[]),
+
         super::LOGICAL_AND => ("LOGICAL_AND", &[]),
         super::LOGICAL_OR => ("LOGICAL_OR", &[]),
         super::LOGICAL_IMPL => ("LOGICAL_IMPL", &[]),

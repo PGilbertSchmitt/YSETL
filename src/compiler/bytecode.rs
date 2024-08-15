@@ -20,7 +20,7 @@ impl Bytecode {
             match operands {
                 [] => println!("{name}"),
                 [2] => println!("{name} {}", c.get_u16()),
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
     }

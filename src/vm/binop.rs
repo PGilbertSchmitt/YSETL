@@ -38,7 +38,13 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
         op::ADD => BaseObject::Int(left + right),
         op::SUBSET => BaseObject::Int(left - right),
         op::MULT => BaseObject::Int(left * right),
-        op::EXP => BaseObject::Int(left.pow(right as u32)),
+        op::EXP => {
+            if right < 0 {
+                BaseObject::Float((left as f64).powf(right as f64))
+            } else {
+                BaseObject::Int(left.pow(right as u32))
+            }
+        },
         op::DIV => {
             if right == 0 {
                 panic!("Divide by zero error!");

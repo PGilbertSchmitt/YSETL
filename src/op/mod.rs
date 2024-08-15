@@ -38,6 +38,15 @@ pub const LTEQ: Op = 217;
 pub const EQ: Op = 218;
 pub const NEQ: Op = 219;
 
+// Prefix Operations
+pub const NOT: Op = 240;
+pub const NEGATE: Op = 241;
+pub const SIZE: Op = 242;
+pub const HEAD: Op = 243;
+pub const LAST: Op = 244;
+pub const TAIL: Op = 245;
+pub const INIT: Op = 246;
+
 // Binary Branch Operations
 pub const LOGICAL_AND: Op = 250;
 pub const LOGICAL_OR: Op = 251;

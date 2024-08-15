@@ -1,8 +1,8 @@
+use super::op::{self, Op};
 use crate::{
     object::BaseObject,
-    parser::ast::{BinOp, Expr, Stmt, StmtList},
+    parser::ast::{BinOp, Expr, PreOp, Stmt, StmtList},
 };
-use super::op::{self, Op};
 use bytecode::Bytecode;
 use bytes::{BufMut, BytesMut};
 
@@ -71,7 +71,11 @@ impl Compiler {
             Expr::Infix { op, lhs, rhs } => {
                 self.compile_expr(*lhs);
                 self.compile_expr(*rhs);
-                self.emit(binop_to_op(op));
+                self.emit(from_binop(op));
+            }
+            Expr::Prefix { op, rhs } => {
+                self.compile_expr(*rhs);
+                from_pre_op(op).map(|code| self.emit(code));
             }
             _ => unimplemented!(),
         };
@@ -98,7 +102,7 @@ impl Compiler {
     }
 }
 
-fn binop_to_op(binop: BinOp) -> Op {
+fn from_binop(binop: BinOp) -> Op {
     match binop {
         BinOp::Nullcoel => op::NULLCOEL,
         BinOp::Take => op::TAKE,
@@ -123,5 +127,18 @@ fn binop_to_op(binop: BinOp) -> Op {
         BinOp::And => op::LOGICAL_AND,
         BinOp::Or => op::LOGICAL_OR,
         BinOp::Impl => op::LOGICAL_IMPL,
+    }
+}
+
+fn from_pre_op(pre_op: PreOp) -> Option<Op> {
+    match pre_op {
+        PreOp::Not => Some(op::NOT),
+        PreOp::Negate => Some(op::NEGATE),
+        PreOp::Size => Some(op::SIZE),
+        PreOp::Head => Some(op::HEAD),
+        PreOp::Last => Some(op::LAST),
+        PreOp::Tail => Some(op::TAIL),
+        PreOp::Init => Some(op::INIT),
+        PreOp::Identity => None, // No op needed for Identity
     }
 }

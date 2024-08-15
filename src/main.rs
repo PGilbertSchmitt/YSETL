@@ -19,7 +19,7 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_program("print 11 + 13 ** 2;\nprint 3 + 4 + 8;");
+    let ast = parse_program("print 11 + 13 ** -1;\nprint -3 + 4 + 8;");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");

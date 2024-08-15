@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use binop::execute_binop;
 use bytes::{Buf, Bytes};
+use preop::execute_pre_op;
 
 use crate::compiler::bytecode::Bytecode;
 use crate::object::{BaseObject, Object, ObjectOps};
@@ -9,6 +10,7 @@ use crate::op;
 
 pub mod binop;
 pub mod frame;
+pub mod preop;
 
 const MAX_STACK_SIZE: usize = 4096;
 
@@ -63,7 +65,7 @@ impl VM {
                     println!("{}", self.stack.pop_one().to_s());
                 }
 
-                // Binops
+                // Binary Operations (no jumps)
                 op::NULLCOEL
                 | op::TAKE
                 | op::EXP
@@ -88,7 +90,15 @@ impl VM {
                     let left = self.stack.pop_one();
                     self.stack.push(execute_binop(op, left, right))
                 }
-                _ => unimplemented!(),
+
+                // Prefix Operations
+                op::NOT
+                | op::NEGATE => {
+                    let right = self.stack.pop_one();
+                    self.stack.push(execute_pre_op(op, right))
+                }
+
+                _ => panic!("Still need to implement op {op}"),
             }
         }
     }

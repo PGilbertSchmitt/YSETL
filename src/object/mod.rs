@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
 pub trait ObjectOps {
+    fn truthy_convert(&self) -> Self;
+    fn not(&self) -> Self;
+    fn negate(&self) -> Self;
     fn to_s(&self) -> String;
     fn to_debug_string(&self) -> String;
 }
@@ -19,9 +22,42 @@ impl BaseObject {
     pub fn wrap(self) -> Object {
         Object(Rc::new(self))
     }
+
+    fn is_truthy(&self) -> bool {
+        match self {
+            Self::Null | Self::False | Self::Int(0) | Self::Float(0.0) => false,
+            _ => true,
+        }
+    }
 }
 
 impl ObjectOps for BaseObject {
+    fn truthy_convert(&self) -> Self {
+        if self.is_truthy() {
+            Self::True
+        } else {
+            Self::False
+        }
+    }
+
+    fn not(&self) -> Self {
+        if self.is_truthy() {
+            Self::False
+        } else {
+            Self::True
+        }
+    }
+
+    fn negate(&self) -> Self {
+        match self {
+            BaseObject::Int(x) => BaseObject::Int(-x),
+            BaseObject::Float(x) => BaseObject::Float(-x),
+            _ => {
+                panic!("Cannot negate non-boolean value {}", self.to_debug_string())
+            }
+        }
+    }
+
     fn to_s(&self) -> String {
         match self {
             Self::Null => String::from("null"),
@@ -55,6 +91,18 @@ impl Object {
 }
 
 impl ObjectOps for Object {
+    fn truthy_convert(&self) -> Self {
+        self.0.truthy_convert().wrap()
+    }
+
+    fn not(&self) -> Self {
+        self.0.not().wrap()
+    }
+
+    fn negate(&self) -> Self {
+        self.0.negate().wrap()
+    }
+
     fn to_s(&self) -> String {
         self.0.to_s()
     }
