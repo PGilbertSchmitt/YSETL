@@ -65,9 +65,43 @@ impl VM {
                     println!("{}", self.stack.pop_one().to_s());
                 }
 
+                op::JUMP => {
+                    let jmp_pos = ptr.get_u32();
+                    ptr.set_position(jmp_pos as u64);
+                }
+
+                op::JUMP_NOT_TRUE => {
+                    let jmp_pos = ptr.get_u32();
+                    if !self.stack.pop_one().is_truthy() {
+                        ptr.set_position(jmp_pos as u64);
+                    }
+                }
+
+                op::JUMP_PEEK_AND => {
+                    let jmp_pos = ptr.get_u32();
+                    if !self.stack.last().unwrap().is_truthy() {
+                        ptr.set_position(jmp_pos as u64);
+                    }
+                }
+
+                op::JUMP_PEEK_OR => {
+                    let jmp_pos = ptr.get_u32();
+                    if self.stack.last().unwrap().is_truthy() {
+                        ptr.set_position(jmp_pos as u64);
+                    }
+                }
+
+                op::JUMP_PEEK_NULL => {
+                    let jmp_pos = ptr.get_u32();
+                    if !self.stack.last().unwrap().is_null() {
+                        ptr.set_position(jmp_pos as u64);
+                    }
+                }
+
+                op::RETURN => todo!(),
+
                 // Binary Operations (no jumps)
-                op::NULLCOEL
-                | op::TAKE
+                op::TAKE
                 | op::EXP
                 | op::MULT
                 | op::DIV
@@ -84,6 +118,8 @@ impl VM {
                 | op::SUBSET
                 | op::LT
                 | op::LTEQ
+                | op::GT
+                | op::GTEQ
                 | op::EQ
                 | op::NEQ => {
                     let right = self.stack.pop_one();
@@ -92,10 +128,13 @@ impl VM {
                 }
 
                 // Prefix Operations
-                op::NOT
-                | op::NEGATE => {
+                op::NOT | op::NEGATE => {
                     let right = self.stack.pop_one();
                     self.stack.push(execute_pre_op(op, right))
+                }
+
+                op::DBG_PRINT_STACK_TOP => {
+                    println!("Top of stack: {}", self.stack.last().unwrap().to_s())
                 }
 
                 _ => panic!("Still need to implement op {op}"),

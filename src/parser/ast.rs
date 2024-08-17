@@ -101,7 +101,7 @@ pub enum SelectOp {
 #[derive(Debug)]
 pub struct SwitchCase {
     pub condition: Option<Expr>,
-    pub consequence: Expr,
+    pub consequence: Stmt,
 }
 
 #[derive(Debug)]
@@ -117,6 +117,12 @@ pub enum Postfix {
 }
 
 #[derive(Debug)]
+pub struct StmtListWithCapture {
+    pub stmt_list: StmtList,
+    pub implicit_return: Option<Box<Stmt>>,
+}
+
+#[derive(Debug)]
 pub enum Expr {
     Null,
     Newat,
@@ -129,6 +135,7 @@ pub enum Expr {
     Float(f64),
     Tuple(Former),
     Set(Former),
+    Block(StmtListWithCapture),
     Function {
         req_params: Vec<String>,
         opt_params: Vec<String>,
@@ -147,18 +154,14 @@ pub enum Expr {
         lhs: Box<Expr>,
         postfix: Postfix,
     },
-    Block {
-        stmts: StmtList,
-        implicit_return: Option<Box<Stmt>>,
-    },
     Select {
         op: SelectOp,
         iterator: Iterator,
     },
     Ternary {
         condition: Box<Expr>,
-        consequence: Box<Expr>,
-        alternative: Box<Expr>,
+        consequence: Box<Stmt>,
+        alternative: Box<Stmt>,
     },
     Switch {
         condition: Option<Box<Expr>>,

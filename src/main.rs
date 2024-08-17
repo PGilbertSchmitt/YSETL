@@ -4,6 +4,7 @@ use parser::{
     grammar::{Rule, YsetlParser},
     parser::parse_program,
 };
+use pest::Parser;
 use vm::VM;
 
 pub mod compiler;
@@ -13,13 +14,12 @@ pub mod parser;
 pub mod vm;
 
 pub fn print_structure(rule: Rule, input: &str) {
-    use pest::Parser;
     let result = YsetlParser::parse(rule, input).unwrap().next().unwrap();
     println!("{}", pair_structure(result));
 }
 
 fn main() {
-    let ast = parse_program("print 11 + 13 ** -1;\nprint -3 + 4 + 8;");
+    let ast = parse_program("print if false ? 99 : print 7");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");

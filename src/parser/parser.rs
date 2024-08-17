@@ -19,6 +19,7 @@ use super::ast::SelectOp;
 use super::ast::SingleIterator;
 use super::ast::Stmt;
 use super::ast::StmtList;
+use super::ast::StmtListWithCapture;
 use super::ast::SwitchCase;
 use super::grammar::Rule;
 use super::grammar::YsetlParser;
@@ -35,6 +36,7 @@ type ExprListResult = YsetlParseResult<ExprList>;
 type SingleIteratorResult = YsetlParseResult<SingleIterator>;
 type CaseResult = YsetlParseResult<SwitchCase>;
 type PostfixResult = YsetlParseResult<Postfix>;
+type BlockResult = YsetlParseResult<StmtListWithCapture>;
 
 type ParamList = (Vec<String>, Vec<String>);
 
@@ -108,13 +110,19 @@ pub fn parse_program(input: &str) -> StmtList {
         .next()
         .unwrap();
 
-    parse_stmt_list(result).unwrap()
+    let stmt_list_with_capture = parse_stmt_list_with_capture(result).unwrap();
+    let mut list = stmt_list_with_capture.stmt_list;
+    if let Some(expr_box) = stmt_list_with_capture.implicit_return {
+        list.push(*expr_box);
+    }
+    list
 }
 
 fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
     match stmt.as_rule() {
         Rule::return_stmt => parse_return_stmt(stmt),
         Rule::print_stmt => parse_print_stmt(stmt),
+        // Rule::cond_stmt => parse_cond_stmt(stmt),
         Rule::assign_stmt => parse_assign_stmt(stmt),
         _ => Ok(Stmt::Expr(parse_expr(stmt)?)),
     }
@@ -128,7 +136,7 @@ fn parse_expr(expr: Pair<Rule>) -> ExprResult {
         Rule::switch_expr => parse_switch_expr(expr),
         Rule::gen_expr => parse_bin_expr(expr),
         Rule::block_expr => parse_block_expr(expr),
-        _ => unimplemented!(),
+        _ => panic!("Failed to process rule {} as expr", expr),
     }
 }
 
@@ -159,8 +167,9 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::tuple_literal => parse_tuple_literal(primary),
         Rule::set_literal => parse_set_literal(primary),
         Rule::func_literal => parse_function_literal(primary),
-        rule => {
-            panic!("failed to process rule: {:?}", rule);
+        Rule::nested_expr => parse_nested_expr(primary),
+        _ => {
+            panic!("failed to process rule {} as primary", primary);
         }
     }
 }
@@ -317,7 +326,7 @@ fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::dollar => PreOp::Last,
         Rule::tilde => PreOp::Tail,
         Rule::amp => PreOp::Init,
-        _ => unimplemented!(),
+        _ => unreachable!(),
     };
     Ok(Expr::Prefix {
         op,
@@ -405,7 +414,7 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::dbl_lt | Rule::kw_with => BinOp::WithBitLeft,
         Rule::dbl_gt | Rule::kw_less => BinOp::LessBitRight,
         Rule::dbl_eq | Rule::kw_iff => BinOp::Eq,
-        Rule::dbl_amp | Rule::kw_and => BinOp::Add,
+        Rule::dbl_amp | Rule::kw_and => BinOp::And,
         Rule::dbl_pipe | Rule::kw_or => BinOp::Or,
         Rule::lt => BinOp::Lt,
         Rule::gt => BinOp::Gt,
@@ -556,8 +565,8 @@ fn parse_function_literal(expr: Pair<Rule>) -> ExprResult {
 fn parse_ternary_expr(expr: Pair<Rule>) -> ExprResult {
     let mut parts = expr.into_inner();
     let condition = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
-    let consequence = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
-    let alternative = Box::new(parse_expr(careful_unwrap(parts.next())?)?);
+    let consequence = Box::new(parse_stmt(careful_unwrap(parts.next())?)?);
+    let alternative = Box::new(parse_stmt(careful_unwrap(parts.next())?)?);
     Ok(Expr::Ternary {
         condition,
         consequence,
@@ -574,7 +583,7 @@ fn parse_switch_case(case: Pair<Rule>) -> CaseResult {
         Rule::tilde => None,
         _ => Some(parse_expr(condition_pair)?),
     };
-    let consequence = parse_expr(careful_unwrap(parts.next())?)?;
+    let consequence = parse_stmt(careful_unwrap(parts.next())?)?;
     Ok(SwitchCase {
         condition,
         consequence,
@@ -622,18 +631,10 @@ fn parse_select_expr(expr: Pair<Rule>) -> ExprResult {
     Ok(Expr::Select { op, iterator })
 }
 
-// block_expr([ STMT_LIST, EXPR? ])
+// block_expr([ STMT_LIST_WITH_CAPTURE ])
 fn parse_block_expr(expr: Pair<Rule>) -> ExprResult {
-    let mut parts = expr.into_inner();
-    let stmts = parse_stmt_list(careful_unwrap(parts.next())?)?;
-    let implicit_return = parts
-        .next()
-        .map(parse_stmt)
-        .map_or(Ok(None), |v| v.map(|stmt| Some(Box::new(stmt))))?;
-    Ok(Expr::Block {
-        stmts,
-        implicit_return,
-    })
+    let inner = careful_unwrap(expr.into_inner().next())?;
+    Ok(Expr::Block(parse_stmt_list_with_capture(inner)?))
 }
 
 // return_stmt([  ])
@@ -660,6 +661,20 @@ fn parse_assign_stmt(stmt: Pair<Rule>) -> StmtResult {
     let target = parse_bound(careful_unwrap(parts.next())?);
     let value = parse_expr(careful_unwrap(parts.next())?)?;
     Ok(Stmt::Assign { target, value })
+}
+
+// stmt_list_with_capture([ STMT_LIST, STMT? ])
+fn parse_stmt_list_with_capture(pair: Pair<Rule>) -> BlockResult {
+    let mut parts = pair.into_inner();
+    let stmt_list = parse_stmt_list(careful_unwrap(parts.next())?)?;
+    let implicit_return = parts
+        .next()
+        .map(parse_stmt)
+        .map_or(Ok(None), |v| v.map(|stmt| Some(Box::new(stmt))))?;
+    Ok(StmtListWithCapture {
+        stmt_list,
+        implicit_return,
+    })
 }
 
 // stmt_list([  ])

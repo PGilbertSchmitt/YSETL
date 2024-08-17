@@ -106,8 +106,10 @@ impl Display for Rule {
             Rule::print_stmt => write!(f, "print_stmt"),
             Rule::assign_stmt => write!(f, "assign_stmt"),
             Rule::stmt_list => write!(f, "stmt_list"),
+            Rule::stmt_list_with_capture => write!(f, "stmt_list_with_capture"),
 
             Rule::raw_program => write!(f, "raw_program"),
+            Rule::EOI => write!(f, "EOI"),
 
             rule => panic!("No display for rule: {:?}", rule),
         }

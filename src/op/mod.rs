@@ -13,11 +13,19 @@ pub const FALSE: Op = 4;
 // Stack Operations
 pub const POP: Op = 20;
 
+// Control Flow
+pub const JUMP: Op = 30;
+pub const JUMP_NOT_TRUE: Op = 31;
+pub const JUMP_PEEK_AND: Op = 32;
+pub const JUMP_PEEK_OR: Op = 33;
+pub const JUMP_PEEK_NULL: Op = 34;
+
+pub const RETURN: Op = 35;
+
 // Builtins
 pub const PRINT: Op = 150;
 
 // Binary Operations
-pub const NULLCOEL: Op = 200;
 pub const TAKE: Op = 201;
 pub const EXP: Op = 202;
 pub const MULT: Op = 203;
@@ -35,8 +43,11 @@ pub const NOTIN: Op = 214;
 pub const SUBSET: Op = 215;
 pub const LT: Op = 216;
 pub const LTEQ: Op = 217;
-pub const EQ: Op = 218;
-pub const NEQ: Op = 219;
+pub const GT: Op = 218;
+pub const GTEQ: Op = 219;
+pub const EQ: Op = 220;
+pub const NEQ: Op = 221;
+pub const LOGICAL_IMPL: Op = 222;
 
 // Prefix Operations
 pub const NOT: Op = 240;
@@ -47,7 +58,5 @@ pub const LAST: Op = 244;
 pub const TAIL: Op = 245;
 pub const INIT: Op = 246;
 
-// Binary Branch Operations
-pub const LOGICAL_AND: Op = 250;
-pub const LOGICAL_OR: Op = 251;
-pub const LOGICAL_IMPL: Op = 252;
+// DEBUG
+pub const DBG_PRINT_STACK_TOP: Op = 40;

@@ -280,7 +280,13 @@ primary = _{
 expr_unit = _{ prefix_op* ~ primary ~ postfix_selector* }
 gen_expr = !{ expr_unit ~ (binary_op ~ expr_unit)* }
 
-ternary_expr = !{ kw_if ~ expr ~ qst ~ expr ~ colon ~ expr }
+cond_then = _{
+  | tall_arrow
+  | kw_then
+}
+
+ternary_expr = !{ kw_if ~ expr ~ qst ~ stmt ~ colon ~ stmt }
+
 
 // The only kinds of expression which can appear inside a case condition
 // are the non-conditional kinds which can be immediately executed without
@@ -290,11 +296,7 @@ case_expr = _{
   | select_expr
   | gen_expr
 }
-case_then = _{
-  | tall_arrow
-  | kw_then
-}
-case = { kw_case ~ case_expr ~ case_then ~ expr }
+case = { kw_case ~ case_expr ~ cond_then ~ stmt }
 switch_expr = !{
   kw_switch
   ~ nested_expr?
@@ -305,7 +307,7 @@ switch_expr = !{
 
 select_expr = !{ select_op ~ iterator }
 
-block_expr = !{ l_brace ~ stmt_list ~ stmt? ~ r_brace }
+block_expr = !{ l_brace ~ stmt_list_with_capture ~ r_brace }
 
 expr = _{
   | ternary_expr
@@ -321,17 +323,20 @@ expr_list = !{ expr ~ (comma ~ expr)* ~ comma? }
 
 return_stmt  = ${ kw_return ~ (__ ~ expr)? }
 print_stmt   = ${ kw_print ~ expr }
-assign_stmt  =  { kw_let ~ bound ~ eq ~ expr }
+assign_stmt  =  { bound ~ eq ~ expr }
+// cond_stmt    = !{ kw_if ~ expr ~ cond_then ~ stmt }
 
 stmt = _{
   | return_stmt
   | print_stmt
+  // | cond_stmt
   | assign_stmt
   | expr
 }
 
-stmt_list = { (stmt ~ semicolon)* }
+stmt_list = { (stmt ~ semicolon+)* }
+stmt_list_with_capture = { stmt_list ~ stmt? }
 
 // Program
 
-raw_program = { SOI ~ stmt_list ~ EOI }
+raw_program = { SOI ~ stmt_list_with_capture ~ EOI }

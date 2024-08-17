@@ -44,7 +44,7 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
             } else {
                 BaseObject::Int(left.pow(right as u32))
             }
-        },
+        }
         op::DIV => {
             if right == 0 {
                 panic!("Divide by zero error!");
@@ -59,6 +59,8 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
         }
         op::LT => from_bool(left < right),
         op::LTEQ => from_bool(left <= right),
+        op::GT => from_bool(left > right),
+        op::GTEQ => from_bool(left >= right),
         op::EQ => from_bool(left == right),
         op::NEQ => from_bool(left != right),
         _ => unimplemented!(),
@@ -86,6 +88,8 @@ fn execute_float_math(op: Op, left: f64, right: f64) -> BaseObject {
         }
         op::LT => from_bool(left < right),
         op::LTEQ => from_bool(left <= right),
+        op::GT => from_bool(left > right),
+        op::GTEQ => from_bool(left >= right),
         op::EQ => from_bool(left == right),
         op::NEQ => from_bool(left != right),
         _ => unimplemented!(),

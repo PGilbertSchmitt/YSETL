@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
 pub trait ObjectOps {
+    fn is_truthy(&self) -> bool;
+    fn is_null(&self) -> bool;
     fn truthy_convert(&self) -> Self;
     fn not(&self) -> Self;
     fn negate(&self) -> Self;
@@ -22,6 +24,12 @@ impl BaseObject {
     pub fn wrap(self) -> Object {
         Object(Rc::new(self))
     }
+}
+
+impl ObjectOps for BaseObject {
+    fn is_null(&self) -> bool {
+        *self == BaseObject::Null
+    }
 
     fn is_truthy(&self) -> bool {
         match self {
@@ -29,9 +37,7 @@ impl BaseObject {
             _ => true,
         }
     }
-}
 
-impl ObjectOps for BaseObject {
     fn truthy_convert(&self) -> Self {
         if self.is_truthy() {
             Self::True
@@ -91,6 +97,14 @@ impl Object {
 }
 
 impl ObjectOps for Object {
+    fn is_null(&self) -> bool {
+        self.0.is_null()
+    }
+
+    fn is_truthy(&self) -> bool {
+        self.0.is_truthy()
+    }
+
     fn truthy_convert(&self) -> Self {
         self.0.truthy_convert().wrap()
     }

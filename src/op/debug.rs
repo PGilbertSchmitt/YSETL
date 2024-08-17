@@ -9,7 +9,14 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         super::POP => ("POP", &[]),
         super::PRINT => ("PRINT", &[]),
 
-        super::NULLCOEL => ("NULLCOEL", &[]),
+        super::JUMP => ("JUMP", &[4]),
+        super::JUMP_NOT_TRUE => ("JUMP_NOT_TRUE", &[4]),
+        super::JUMP_PEEK_AND => ("JUMP_PEEK_AND", &[4]),
+        super::JUMP_PEEK_OR => ("JUMP_PEEK_OR", &[4]),
+        super::JUMP_PEEK_NULL => ("JUMP_PEEK_NULL", &[4]),
+
+        super::RETURN => ("RETURN", &[]),
+
         super::TAKE => ("TAKE", &[]),
         super::EXP => ("EXP", &[]),
         super::MULT => ("MULT", &[]),
@@ -27,8 +34,11 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         super::SUBSET => ("SUBSET", &[]),
         super::LT => ("LT", &[]),
         super::LTEQ => ("LTEQ", &[]),
+        super::GT => ("GT", &[]),
+        super::GTEQ => ("GTEQ", &[]),
         super::EQ => ("EQ", &[]),
         super::NEQ => ("NEQ", &[]),
+        super::LOGICAL_IMPL => ("LOGICAL_IMPL", &[]),
 
         super::NOT => ("NOT", &[]),
         super::NEGATE => ("NEGATE", &[]),
@@ -38,10 +48,8 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         super::TAIL => ("TAIL", &[]),
         super::INIT => ("INIT", &[]),
 
-        super::LOGICAL_AND => ("LOGICAL_AND", &[]),
-        super::LOGICAL_OR => ("LOGICAL_OR", &[]),
-        super::LOGICAL_IMPL => ("LOGICAL_IMPL", &[]),
+        super::DBG_PRINT_STACK_TOP => ("DBG_PRINT_STACK_TOP", &[]),
 
-        _ => unreachable!(),
+        _ => panic!("No debug lookup for byte: {}", byte),
     }
 }
