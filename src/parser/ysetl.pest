@@ -180,9 +180,9 @@ set_literal   = { l_brace ~ former? ~ r_brace }
 // Former
 
 iterator_former       =  { expr ~ colon ~ iterator }
-inclusive_range_op    =  { tpl_dot }
-exclusive_range_op    =  { dbl_dot }
-range_op              = _{ inclusive_range_op | exclusive_range_op }
+inclusive_range_op    =  { dbl_dot }
+exclusive_range_op    =  { tpl_dot }
+range_op              = _{ exclusive_range_op | inclusive_range_op }
 range_former          =  { expr ~ range_op ~ expr }
 interval_range_former =  { expr ~ comma ~ range_former }
 
@@ -229,7 +229,7 @@ single_iterator        = _{
 }
 iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* ~ comma? }
 iterator_where         = _{ arrow | kw_where }
-iterator               = !{ iterator_list ~ (iterator_where ~ expr_list)? }
+iterator               = !{ iterator_list ~ (iterator_where ~ expr)? }
 
 // Functions
 

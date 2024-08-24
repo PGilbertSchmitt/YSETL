@@ -69,7 +69,7 @@ pub enum SingleIterator {
 #[derive(Debug)]
 pub struct Iterator {
     pub iterators: IteratorList,
-    pub filters: ExprList,
+    pub filter: Option<Box<Expr>>,
 }
 
 #[derive(Debug)]

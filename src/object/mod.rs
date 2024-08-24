@@ -18,6 +18,7 @@ pub enum BaseObject {
     Int(i64),
     Float(f64),
     String(String),
+    Tuple(Vec<Object>),
 }
 
 impl BaseObject {
@@ -72,6 +73,7 @@ impl ObjectOps for BaseObject {
             Self::Int(x) => x.to_string(),
             Self::Float(x) => x.to_string(),
             Self::String(val) => val.clone(),
+            Self::Tuple(vals) => format!("[{}]", vals.iter().map(|o| o.to_s()).collect::<Vec<String>>().join(",")),
         }
     }
 
@@ -83,11 +85,12 @@ impl ObjectOps for BaseObject {
             Self::Int(x) => format!("i{x}"),
             Self::Float(x) => format!("f{x}"),
             Self::String(val) => format!("\"{val}\""),
+            Self::Tuple(vals) => format!("[{}]", vals.iter().map(|o| o.to_debug_string()).collect::<Vec<String>>().join(","))
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Object(Rc<BaseObject>);
 
 impl Object {

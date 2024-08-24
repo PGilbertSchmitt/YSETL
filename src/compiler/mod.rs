@@ -1,18 +1,18 @@
-use std::{u16, u32};
-
 use super::op::{self, Op};
 use crate::{
-    object::BaseObject,
-    parser::ast::{BinOp, Expr, PreOp, Stmt, StmtList},
+    object::BaseObject, op::MAKE_RN_COL, parser::ast::{BinOp, Bound, Expr, Former, PreOp, Stmt, StmtList}
 };
-use bytecode::Bytecode;
+use bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
 use bytes::{BufMut, Bytes, BytesMut};
+use symbols::{Scope, SymbolStack};
 
 pub mod bytecode;
+pub mod symbols;
 
 pub struct Compiler {
     instructions: BytesMut,
     constants: Vec<BaseObject>,
+    symbols: SymbolStack,
 }
 
 impl Compiler {
@@ -20,6 +20,7 @@ impl Compiler {
         Compiler {
             instructions: BytesMut::new(),
             constants: Vec::new(),
+            symbols: SymbolStack::new(),
         }
     }
 
@@ -32,6 +33,7 @@ impl Compiler {
         Bytecode {
             instructions: self.instructions.freeze(),
             constants: self.constants,
+            global_count: self.symbols.size(),
         }
     }
 
@@ -49,6 +51,21 @@ impl Compiler {
             Stmt::Print(expr) => {
                 self.compile_expr(expr);
                 self.emit(op::PRINT); // Performs a pop
+            }
+            Stmt::Assign { target, value } => {
+                match target {
+                    Bound::Ident(ident) => {
+                        self.compile_expr(value);
+                        let sym = self.symbols.register_sym(ident);
+                        let code = match sym.scope {
+                            Scope::GLOBAL => op::SET_GLOBAL,
+                            Scope::LOCAL => op::SET_LOCAL,
+                        };
+                        self.emit_with_u16(code, sym.index);
+                    }
+                    // Gonna need to have a hard thing about destructuring via stack
+                    _ => unimplemented!(),
+                }
             }
             _ => panic!("Unimplemented in compile_stmt: {node:?}"),
         }
@@ -84,6 +101,18 @@ impl Compiler {
             Expr::String(value) => {
                 let const_ptr = self.add_const(BaseObject::String(value));
                 self.emit_with_u16(op::CONST, const_ptr);
+            }
+            Expr::Tuple(former) => self.compile_former(former, TUP_BASE),
+            Expr::Set(former) => self.compile_former(former, SET_BASE),
+            Expr::Ident(name) => {
+                let sym = self.symbols.lookup(&name).unwrap_or_else(||
+                    panic!("Symbol \"{name}\" was never declared")
+                );
+                let code = match sym.scope {
+                    Scope::GLOBAL => op::GET_GLOBAL,
+                    Scope::LOCAL => op::GET_LOCAL,
+                };
+                self.emit_with_u16(code, sym.index);
             }
             Expr::Infix { op, lhs, rhs } => match op {
                 BinOp::And => self.compile_binary_op_with_jump(op::JUMP_PEEK_AND, lhs, rhs),
@@ -133,13 +162,46 @@ impl Compiler {
         self.overwrite_u32(jmp_operand_ptr, jmp_destination as u32);
     }
 
+    fn compile_former(&mut self, former: Former, flag_base: u8) {
+        match former {
+            Former::Empty => self.emit_with_u8_u16(op::MAKE_LIT_COL, flag_base, 0),
+            Former::Literal(elements) => {
+                let size = elements.len() as u16;
+                elements.into_iter().for_each(|el| self.compile_expr(el));
+                self.emit_with_u8_u16(op::MAKE_LIT_COL, flag_base, size);
+            },
+            Former::Range(range) => {
+                let mut flag = flag_base;
+                if range.inclusive { flag |= INCL_BIT };
+                if let Some(step) = range.step {
+                    self.compile_expr(*step);
+                    flag |= STEP_BIT;
+                };
+
+                self.compile_expr(*range.start);
+                self.compile_expr(*range.end);
+                self.emit_with_u8(MAKE_RN_COL, flag);
+            }
+            Former::Iterator { output: _, iterator: _ } => unimplemented!(),
+        }
+    }
+
+    /* Buncha convenience methods for modifying the instructions */
+
     fn emit(&mut self, code: Op) {
         self.instructions.put_u8(code);
     }
 
-    // fn emit_bytes(&mut self, bytes: Bytes) {
-    //     self.instructions.put(bytes);
-    // }
+    fn emit_with_u8(&mut self, code: Op, operand: u8) {
+        self.emit(code);
+        self.instructions.put_u8(operand);
+    }
+
+    fn emit_with_u8_u16(&mut self, code: Op, operand_1: u8, operand_2: u16) {
+        self.emit(code);
+        self.instructions.put_u8(operand_1);
+        self.instructions.put_u16(operand_2);
+    }
 
     fn emit_with_u16(&mut self, code: Op, operand: u16) {
         self.emit(code);
@@ -150,6 +212,10 @@ impl Compiler {
         self.emit(code);
         self.instructions.put_u32(operand);
     }
+
+    // fn emit_bytes(&mut self, bytes: Bytes) {
+    //     self.instructions.put(bytes);
+    // }
 
     fn add_const(&mut self, base_object: BaseObject) -> u16 {
         self.constants.push(base_object);

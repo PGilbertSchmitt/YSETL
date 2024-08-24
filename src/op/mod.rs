@@ -9,6 +9,13 @@ pub const CONST: Op = 1;
 pub const NULL: Op = 2;
 pub const TRUE: Op = 3;
 pub const FALSE: Op = 4;
+pub const SET_GLOBAL: Op = 5;
+pub const GET_GLOBAL: Op = 6;
+pub const SET_LOCAL: Op = 7;
+pub const GET_LOCAL: Op = 8;
+
+pub const MAKE_LIT_COL: Op = 9;
+pub const MAKE_RN_COL: Op = 10;
 
 // Stack Operations
 pub const POP: Op = 20;

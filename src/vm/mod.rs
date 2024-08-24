@@ -29,76 +29,113 @@ pub struct VM {
     constants: Vec<Object>,
     instructions: Bytes,
     stack: Vec<Object>,
+    globals: Vec<Object>,
+
+    null_ref: Object,
+    true_ref: Object,
+    false_ref: Object,
 }
 
 impl VM {
     pub fn new(bc: Bytecode) -> Self {
+        let null_ref = BaseObject::Null.wrap();
+        let true_ref = BaseObject::True.wrap();
+        let false_ref = BaseObject::False.wrap();
+        
         VM {
             instructions: bc.instructions,
             constants: bc.constants.into_iter().map(BaseObject::wrap).collect(),
             stack: Vec::with_capacity(MAX_STACK_SIZE),
+            // Insertions can happen in any order, and uninitialized globals are hoisted, so
+            // the globals vec is initialized to its known size with every space filled with null.
+            globals: (0..bc.global_count).into_iter().map(|_| null_ref.clone()).collect(),
+
+            null_ref,
+            true_ref,
+            false_ref,
         }
     }
 
     /** Consume the VM to execute the entirety of the VM state */
     pub fn run(mut self) {
         let cur_ins = self.instructions;
-        let mut ptr = Cursor::new(cur_ins);
+        let mut ins_cur = Cursor::new(cur_ins);
 
-        while ptr.has_remaining() {
-            let op = ptr.get_u8();
+        while ins_cur.has_remaining() {
+            let op = ins_cur.get_u8();
 
             match op {
                 op::CONST => {
-                    let const_obj = self.constants[ptr.get_u16() as usize].clone();
+                    let const_obj = self.constants[ins_cur.get_u16() as usize].clone();
                     self.stack.push(const_obj);
                 }
-                op::NULL => self.stack.push(BaseObject::Null.wrap()),
-                op::TRUE => self.stack.push(BaseObject::True.wrap()),
-                op::FALSE => self.stack.push(BaseObject::False.wrap()),
+                op::NULL => self.stack.push(self.null_ref.clone()),
+                op::TRUE => self.stack.push(self.true_ref.clone()),
+                op::FALSE => self.stack.push(self.false_ref.clone()),
+
+                op::SET_GLOBAL => {
+                    let global_ptr = ins_cur.get_u16();
+                    self.globals[global_ptr as usize] = self.stack.pop_one();
+                }
+
+                op::GET_GLOBAL => {
+                    let global_ptr = ins_cur.get_u16();
+                    self.stack.push(self.globals[global_ptr as usize].clone());
+                }
+
+                op::SET_LOCAL => todo!(),
+                op::GET_LOCAL => todo!(),
+                
+                op::MAKE_LIT_COL => {
+                    let _flag = ins_cur.get_u8();
+                    let _size = ins_cur.get_u16();
+                    todo!();
+                }
+
+                op::MAKE_RN_COL => todo!(),
 
                 op::POP => {
                     self.stack.pop_one();
                 }
 
-                op::PRINT => {
-                    println!("{}", self.stack.pop_one().to_s());
-                }
-
                 op::JUMP => {
-                    let jmp_pos = ptr.get_u32();
-                    ptr.set_position(jmp_pos as u64);
+                    let jmp_pos = ins_cur.get_u32();
+                    ins_cur.set_position(jmp_pos as u64);
                 }
 
                 op::JUMP_NOT_TRUE => {
-                    let jmp_pos = ptr.get_u32();
+                    let jmp_pos = ins_cur.get_u32();
                     if !self.stack.pop_one().is_truthy() {
-                        ptr.set_position(jmp_pos as u64);
+                        ins_cur.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_AND => {
-                    let jmp_pos = ptr.get_u32();
+                    let jmp_pos = ins_cur.get_u32();
                     if !self.stack.last().unwrap().is_truthy() {
-                        ptr.set_position(jmp_pos as u64);
+                        ins_cur.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_OR => {
-                    let jmp_pos = ptr.get_u32();
+                    let jmp_pos = ins_cur.get_u32();
                     if self.stack.last().unwrap().is_truthy() {
-                        ptr.set_position(jmp_pos as u64);
+                        ins_cur.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_NULL => {
-                    let jmp_pos = ptr.get_u32();
+                    let jmp_pos = ins_cur.get_u32();
                     if !self.stack.last().unwrap().is_null() {
-                        ptr.set_position(jmp_pos as u64);
+                        ins_cur.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::RETURN => todo!(),
+
+                op::PRINT => {
+                    println!("{}", self.stack.pop_one().to_s());
+                }
 
                 // Binary Operations (no jumps)
                 op::TAKE

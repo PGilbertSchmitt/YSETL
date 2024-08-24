@@ -5,6 +5,12 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         super::NULL => ("NULL", &[]),
         super::TRUE => ("TRUE", &[]),
         super::FALSE => ("FALSE", &[]),
+        super::SET_GLOBAL => ("SET_GLOBAL", &[2]),
+        super::GET_GLOBAL => ("GET_GLOBAL", &[2]),
+        super::SET_LOCAL => ("SET_LOCAL", &[2]),
+        super::GET_LOCAL => ("GET_LOCAL", &[2]),
+        super::MAKE_LIT_COL => ("MAKE_LIT_COL", &[1, 2]),
+        super::MAKE_RN_COL => ("MAKE_RN_COL", &[1]),
 
         super::POP => ("POP", &[]),
         super::PRINT => ("PRINT", &[]),

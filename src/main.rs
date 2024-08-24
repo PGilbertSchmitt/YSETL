@@ -19,7 +19,7 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_program("print if false ? 99 : print 7");
+    let ast = parse_program("a = 2; b = 5; print a + b");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");

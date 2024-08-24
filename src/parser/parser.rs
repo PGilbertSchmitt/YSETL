@@ -463,15 +463,15 @@ fn parse_bound_list(pair: Pair<Rule>) -> BoundList {
     pair.into_inner().map(parse_bound).collect()
 }
 
-//  iterator([ITERATOR_LIST, EXPR_LIST?])
+//  iterator([ITERATOR_LIST, EXPR?])
 fn parse_iterator(pair: Pair<Rule>) -> Result<Iterator, YsetlParseError> {
     let mut parts = pair.into_inner();
     let iterators = parse_iterator_list(careful_unwrap(parts.next())?)?;
-    let filters = match parts.next() {
-        Some(exprs) => parse_expr_list(exprs)?,
-        None => vec![],
+    let filter = match parts.next() {
+        Some(expr) => Some(Box::new(parse_expr(expr)?)),
+        None => None,
     };
-    Ok(Iterator { iterators, filters })
+    Ok(Iterator { iterators, filter })
 }
 
 // iterator_list([SINGLE_ITERATOR, SINGLE_ITERATOR, ..., SINGLE_ITERATOR])
