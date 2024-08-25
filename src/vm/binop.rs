@@ -1,5 +1,5 @@
-use crate::object::{BaseObject, Object, ObjectOps};
-use crate::op::debug::lookup;
+use crate::object::object::{BaseObject, Object, ObjectOps};
+use crate::op::lookup;
 use crate::op::{self, Op};
 
 pub fn from_bool(val: bool) -> BaseObject {

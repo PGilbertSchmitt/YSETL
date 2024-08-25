@@ -2,11 +2,12 @@ use std::io::Cursor;
 
 use bytes::{Buf, Bytes};
 
-use crate::{object::BaseObject, op::debug::lookup};
+use crate::object::object::BaseObject;
+use crate::op::lookup;
 
 pub struct Bytecode {
     pub instructions: Bytes,
-    pub constants: Vec<BaseObject>, 
+    pub constants: Vec<BaseObject>,
     pub global_count: u16,
 }
 
@@ -51,7 +52,7 @@ impl Bytecode {
  *   With Step    - 1
  */
 
-pub const TUP_BASE: u8  = 0b1000_0000;
-pub const SET_BASE: u8  = 0b0100_0000;
-pub const INCL_BIT: u8  = 0b0010_0000;
+pub const TUP_BASE: u8 = 0b1000_0000;
+pub const SET_BASE: u8 = 0b0100_0000;
+pub const INCL_BIT: u8 = 0b0010_0000;
 pub const STEP_BIT: u8 = 0b0001_0000;

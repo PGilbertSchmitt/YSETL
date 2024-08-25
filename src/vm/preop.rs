@@ -1,5 +1,5 @@
 use crate::{
-    object::{Object, ObjectOps},
+    object::object::{Object, ObjectOps},
     op::{self, Op},
 };
 

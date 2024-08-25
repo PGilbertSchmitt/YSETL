@@ -1,11 +1,11 @@
-use compiler::Compiler;
+use compiler::compiler::Compiler;
 use parser::{
     debug::pair_structure,
     grammar::{Rule, YsetlParser},
     parser::parse_program,
 };
 use pest::Parser;
-use vm::VM;
+use vm::vm::VM;
 
 pub mod compiler;
 pub mod object;

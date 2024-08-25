@@ -50,9 +50,10 @@ impl SymbolStack {
     }
 
     pub fn lookup(&self, id: &str) -> Option<Rc<Symbol>> {
-        self.registries.iter().rev().find_map(|reg| {
-            reg.get(id).map(Rc::clone)
-        })
+        self.registries
+            .iter()
+            .rev()
+            .find_map(|reg| reg.get(id).map(Rc::clone))
     }
 
     pub fn size(&self) -> u16 {
@@ -83,7 +84,7 @@ mod tests {
         let symbol_a = reg.lookup("a").unwrap();
         assert_eq!(symbol_a.index, 0);
         assert_eq!(symbol_a.scope, Scope::GLOBAL);
-        
+
         let symbol_b = reg.lookup("b").unwrap();
         assert_eq!(symbol_b.index, 1);
         assert_eq!(symbol_b.scope, Scope::GLOBAL);
