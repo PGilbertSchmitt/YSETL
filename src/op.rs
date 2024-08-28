@@ -11,9 +11,12 @@ pub const SET_GLOBAL: Op = 5;
 pub const GET_GLOBAL: Op = 6;
 pub const SET_LOCAL: Op = 7;
 pub const GET_LOCAL: Op = 8;
+pub const GET_LOCKED: Op = 9;
 
-pub const MAKE_LIT_COL: Op = 9;
-pub const MAKE_RN_COL: Op = 10;
+pub const MAKE_LIT_COL: Op = 10;
+pub const MAKE_RN_COL: Op = 11;
+
+pub const MAKE_FN: Op = 15;
 
 // Stack Operations
 pub const POP: Op = 20;
@@ -25,7 +28,8 @@ pub const JUMP_PEEK_AND: Op = 32;
 pub const JUMP_PEEK_OR: Op = 33;
 pub const JUMP_PEEK_NULL: Op = 34;
 
-pub const RETURN: Op = 35;
+pub const CALL: Op = 35;
+pub const RETURN: Op = 36;
 
 // Builtins
 pub const PRINT: Op = 150;
@@ -77,8 +81,10 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         GET_GLOBAL => ("GET_GLOBAL", &[2]),
         SET_LOCAL => ("SET_LOCAL", &[2]),
         GET_LOCAL => ("GET_LOCAL", &[2]),
+        GET_LOCKED => ("GET_LOCKED", &[2]),
         MAKE_LIT_COL => ("MAKE_LIT_COL", &[1, 2]),
         MAKE_RN_COL => ("MAKE_RN_COL", &[1]),
+        MAKE_FN => ("MAKE_FN", &[2, 2]),
 
         POP => ("POP", &[]),
         PRINT => ("PRINT", &[]),
@@ -89,6 +95,7 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         JUMP_PEEK_OR => ("JUMP_PEEK_OR", &[4]),
         JUMP_PEEK_NULL => ("JUMP_PEEK_NULL", &[4]),
 
+        CALL => ("CALL", &[2]),
         RETURN => ("RETURN", &[]),
 
         TAKE => ("TAKE", &[]),

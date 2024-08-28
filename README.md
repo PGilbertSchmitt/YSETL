@@ -28,17 +28,17 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Floats
 - [x] Strings
 - [ ] Atoms
-- [ ] Tuples (Lists)
-- [ ] Sets
+- [x] Tuples (Lists)
+- [x] Sets
 - [ ] Maps (specialized Sets)
-- [ ] Functions
+- [x] Functions
 - [ ] Function Maps (specialized Maps)
 
 ### Operations
 - [x] Arithmetic
-- [ ] Control flow
-- [ ] Global variables
-- [ ] Local variables
+- [x] Control flow
+- [x] Global variables
+- [x] Local variables
 - [ ] Boolean operations
 - [ ] Tuple operations
 - [ ] Set operations

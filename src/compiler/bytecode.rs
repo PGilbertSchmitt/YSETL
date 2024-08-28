@@ -8,31 +8,35 @@ use crate::op::lookup;
 pub struct Bytecode {
     pub instructions: Bytes,
     pub constants: Vec<BaseObject>,
-    pub global_count: u16,
+    pub global_count: usize,
 }
 
 impl Bytecode {
     pub fn print_bytecode(&self) {
-        let mut c = Cursor::new(&self.instructions);
+        print_bytecode(&self.instructions);
+    }
+}
 
-        while c.has_remaining() {
-            let pos = c.position();
-            let op = c.get_u8();
-            let (name, operands) = lookup(op);
+pub fn print_bytecode(bytes: &Bytes) {
+    let mut c = Cursor::new(bytes);
 
-            let operands_string = operands
-                .iter()
-                .map(|x| match *x {
-                    1 => c.get_u8().to_string(),
-                    2 => c.get_u16().to_string(),
-                    4 => c.get_u32().to_string(),
-                    _ => unimplemented!(),
-                })
-                .collect::<Vec<String>>()
-                .join(" ");
+    while c.has_remaining() {
+        let pos = c.position();
+        let op = c.get_u8();
+        let (name, operands) = lookup(op);
 
-            println!("{pos}: {name} {}", operands_string);
-        }
+        let operands_string = operands
+            .iter()
+            .map(|x| match *x {
+                1 => c.get_u8().to_string(),
+                2 => c.get_u16().to_string(),
+                4 => c.get_u32().to_string(),
+                _ => unimplemented!(),
+            })
+            .collect::<Vec<String>>()
+            .join(" ");
+
+        println!("{pos}: {name} {}", operands_string);
     }
 }
 

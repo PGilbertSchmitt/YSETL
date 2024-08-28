@@ -1,4 +1,5 @@
-use compiler::compiler::Compiler;
+use compiler::{bytecode::print_bytecode, compiler::Compiler};
+use object::object::BaseObject;
 use parser::{
     debug::pair_structure,
     grammar::{Rule, YsetlParser},
@@ -19,7 +20,12 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_program("a = 2; b = 5; print a + b");
+    let ast = parse_program("
+        const = 55;
+        foo = (a) => a + const + 5;
+        print foo(9);
+        print foo(18);
+    ");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");
@@ -27,6 +33,17 @@ fn main() {
     println!("\n:: START INSTRUCTIONS ::");
     bc.print_bytecode();
     println!("::  END INSTRUCTIONS  ::\n");
+
+    for (i, c) in bc.constants.iter().enumerate() {
+        match c {
+            BaseObject::Closure(cl) => {
+                println!(":: START CLOSURE INSTRUCTIONS [{i}] ::");
+                print_bytecode(&cl.ins);
+                println!("::  END CLOSURE INSTRUCTIONS  [{i}] ::\n");
+            },
+            _ => ()
+        }
+    }
 
     println!(":: START EXECUTION ::");
     let vm = VM::new(bc);

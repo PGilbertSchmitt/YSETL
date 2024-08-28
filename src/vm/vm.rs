@@ -1,8 +1,9 @@
 use std::io::Cursor;
 
 use super::binop::execute_binop;
+use super::frame::Frame;
 use super::preop::execute_pre_op;
-use bytes::{Buf, Bytes};
+use bytes::Buf;
 
 use crate::compiler::bytecode::Bytecode;
 use crate::object::object::{BaseObject, Object, ObjectOps};
@@ -23,7 +24,7 @@ impl Stack for Vec<Object> {
 
 pub struct VM {
     constants: Vec<Object>,
-    instructions: Bytes,
+    frames: Vec<Frame>,
     stack: Vec<Object>,
     globals: Vec<Object>,
 
@@ -39,7 +40,7 @@ impl VM {
         let false_ref = BaseObject::False.wrap();
 
         VM {
-            instructions: bc.instructions,
+            frames: vec![Frame::new(bc.instructions, 0, 0, vec![])],
             constants: bc.constants.into_iter().map(BaseObject::wrap).collect(),
             stack: Vec::with_capacity(MAX_STACK_SIZE),
             // Insertions can happen in any order, and uninitialized globals are hoisted, so
@@ -57,15 +58,14 @@ impl VM {
 
     /** Consume the VM to execute the entirety of the VM state */
     pub fn run(mut self) {
-        let cur_ins = self.instructions;
-        let mut ins_cur = Cursor::new(cur_ins);
+        let mut cursor = Cursor::new(self.frame().ins.clone());
 
-        while ins_cur.has_remaining() {
-            let op = ins_cur.get_u8();
+        while cursor.has_remaining() {
+            let op = cursor.get_u8();
 
             match op {
                 op::CONST => {
-                    let const_obj = self.constants[ins_cur.get_u16() as usize].clone();
+                    let const_obj = self.constants[cursor.get_u16() as usize].clone();
                     self.stack.push(const_obj);
                 }
                 op::NULL => self.stack.push(self.null_ref.clone()),
@@ -73,64 +73,122 @@ impl VM {
                 op::FALSE => self.stack.push(self.false_ref.clone()),
 
                 op::SET_GLOBAL => {
-                    let global_ptr = ins_cur.get_u16();
+                    let global_ptr = cursor.get_u16();
                     self.globals[global_ptr as usize] = self.stack.pop_one();
                 }
 
                 op::GET_GLOBAL => {
-                    let global_ptr = ins_cur.get_u16();
+                    let global_ptr = cursor.get_u16();
                     self.stack.push(self.globals[global_ptr as usize].clone());
                 }
 
-                op::SET_LOCAL => todo!(),
-                op::GET_LOCAL => todo!(),
+                op::SET_LOCAL => {
+
+                },
+
+                op::GET_LOCAL => {
+                    let stack_offset = cursor.get_u16() as usize;
+                    let stack_location = self.frame().stack_base + stack_offset;
+                    self.stack.push(self.stack[stack_location].clone());
+                }
+
+                op::GET_LOCKED => todo!(),
 
                 op::MAKE_LIT_COL => {
-                    let _flag = ins_cur.get_u8();
-                    let _size = ins_cur.get_u16();
+                    let _flag = cursor.get_u8();
+                    let _size = cursor.get_u16();
                     todo!();
                 }
 
                 op::MAKE_RN_COL => todo!(),
+
+                op::MAKE_FN => {
+                    let const_ptr = cursor.get_u16() as usize;
+                    let locked_param_count = cursor.get_u16() as usize;
+                    let function = self.constants[const_ptr as usize].clone();
+                    let params_start = self.stack.len() - locked_param_count;
+                    let mut function = function.inner_fn();
+                    function.locked_values = self.stack.drain(params_start..).collect();
+                    self.stack.push(BaseObject::Closure(function).wrap());
+                },
 
                 op::POP => {
                     self.stack.pop_one();
                 }
 
                 op::JUMP => {
-                    let jmp_pos = ins_cur.get_u32();
-                    ins_cur.set_position(jmp_pos as u64);
+                    let jmp_pos = cursor.get_u32();
+                    cursor.set_position(jmp_pos as u64);
                 }
 
                 op::JUMP_NOT_TRUE => {
-                    let jmp_pos = ins_cur.get_u32();
+                    let jmp_pos = cursor.get_u32();
                     if !self.stack.pop_one().is_truthy() {
-                        ins_cur.set_position(jmp_pos as u64);
+                        cursor.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_AND => {
-                    let jmp_pos = ins_cur.get_u32();
+                    let jmp_pos = cursor.get_u32();
                     if !self.stack.last().unwrap().is_truthy() {
-                        ins_cur.set_position(jmp_pos as u64);
+                        cursor.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_OR => {
-                    let jmp_pos = ins_cur.get_u32();
+                    let jmp_pos = cursor.get_u32();
                     if self.stack.last().unwrap().is_truthy() {
-                        ins_cur.set_position(jmp_pos as u64);
+                        cursor.set_position(jmp_pos as u64);
                     }
                 }
 
                 op::JUMP_PEEK_NULL => {
-                    let jmp_pos = ins_cur.get_u32();
+                    let jmp_pos = cursor.get_u32();
                     if !self.stack.last().unwrap().is_null() {
-                        ins_cur.set_position(jmp_pos as u64);
+                        cursor.set_position(jmp_pos as u64);
                     }
                 }
 
-                op::RETURN => todo!(),
+                op::CALL => {
+                    let arg_count = cursor.get_u16() as usize;
+                    let fn_obj = self.stack[self.stack.len() - arg_count - 1]
+                        .clone()
+                        .inner_fn();
+                    let total_params = fn_obj.num_req_params + fn_obj.num_opt_params;
+                    if arg_count < fn_obj.num_req_params {
+                        panic!("Didn't provide enough arguments to function");
+                    } else if arg_count > total_params {
+                        panic!("Provided too many arguments to function");
+                    }
+
+                    let base_pointer = self.stack.len() - arg_count;
+
+                    // The optional params must be on the stack whether or not the args are passed,
+                    // initialized to null. We also need null-initialied spaces all non-param
+                    // local variables.
+                    let unaccounted_count = fn_obj.num_locals + total_params - arg_count;
+                    for _ in 0..unaccounted_count {
+                        self.stack.push(self.null_ref.clone());
+                    }
+
+                    self.frames.push(Frame::new(
+                        fn_obj.ins.clone(),
+                        cursor.position(),
+                        base_pointer,
+                        fn_obj.locked_values.clone(),
+                    ));
+                    cursor = Cursor::new(fn_obj.ins);
+                },
+
+                op::RETURN => {
+                    let last_frame = self.frames.pop().unwrap();
+                    cursor = Cursor::new(self.frame().ins.clone());
+                    cursor.set_position(last_frame.return_ptr);
+                    let return_value = self.stack.pop().unwrap();
+                    self.stack.truncate(last_frame.stack_base); // Remove all args and local vars
+                    self.stack.pop(); // Remove the called function
+                    self.stack.push(return_value);
+                },
 
                 op::PRINT => {
                     println!("{}", self.stack.pop_one().to_s());
@@ -178,17 +236,7 @@ impl VM {
         }
     }
 
-    // pub fn into_iter(self) -> VMIterator {
-    //     VMIterator(self)
-    // }
+    fn frame(&self) -> &Frame {
+        self.frames.last().unwrap_or_else(|| panic!("There are no frames!"))
+    }
 }
-
-// pub struct VMIterator(VM);
-
-// impl Iterator for VMIterator {
-//     type Item = Option<Object>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         todo!()
-//     }
-// }

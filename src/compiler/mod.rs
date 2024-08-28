@@ -1,3 +1,3 @@
 pub mod bytecode;
 pub mod compiler;
-pub mod symbols;
+pub mod scope;

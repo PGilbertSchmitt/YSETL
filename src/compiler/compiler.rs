@@ -1,22 +1,21 @@
 use super::bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
-use super::symbols::{Scope, SymbolStack};
-use crate::object::object::BaseObject;
+use super::scope::{ScopeKind, ScopeStack, SymbolRef};
+
+use crate::object::object::{BaseObject, Function};
 use crate::op::{self, Op};
-use crate::parser::ast::{BinOp, Bound, Expr, Former, PreOp, Stmt, StmtList};
+use crate::parser::ast::{BinOp, Bound, Expr, ExprList, Former, Postfix, PreOp, Stmt, StmtList};
 use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct Compiler {
-    instructions: BytesMut,
     constants: Vec<BaseObject>,
-    symbols: SymbolStack,
+    scopes: ScopeStack,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Compiler {
-            instructions: BytesMut::new(),
             constants: Vec::new(),
-            symbols: SymbolStack::new(),
+            scopes: ScopeStack::new(),
         }
     }
 
@@ -26,10 +25,11 @@ impl Compiler {
     }
 
     pub fn finish(self) -> Bytecode {
+        let (instructions, global_count) = self.scopes.final_scope();
         Bytecode {
-            instructions: self.instructions.freeze(),
+            instructions,
             constants: self.constants,
-            global_count: self.symbols.size(),
+            global_count,
         }
     }
 
@@ -52,12 +52,13 @@ impl Compiler {
                 match target {
                     Bound::Ident(ident) => {
                         self.compile_expr(value);
-                        let sym = self.symbols.register_sym(ident);
+                        let sym = self.scopes.register_sym(ident);
                         let code = match sym.scope {
-                            Scope::GLOBAL => op::SET_GLOBAL,
-                            Scope::LOCAL => op::SET_LOCAL,
+                            ScopeKind::GLOBAL => op::SET_GLOBAL,
+                            ScopeKind::LOCAL => op::SET_LOCAL,
+                            ScopeKind::LOCKED => unreachable!(),
                         };
-                        self.emit_with_u16(code, sym.index);
+                        self.emit_with_u16(code, sym.index as u16);
                     }
                     // Gonna need to have a hard thing about destructuring via stack
                     _ => unimplemented!(),
@@ -102,14 +103,38 @@ impl Compiler {
             Expr::Set(former) => self.compile_former(former, SET_BASE),
             Expr::Ident(name) => {
                 let sym = self
-                    .symbols
-                    .lookup(&name)
+                    .scopes
+                    .lookup_sym(&name)
                     .unwrap_or_else(|| panic!("Symbol \"{name}\" was never declared"));
-                let code = match sym.scope {
-                    Scope::GLOBAL => op::GET_GLOBAL,
-                    Scope::LOCAL => op::GET_LOCAL,
-                };
-                self.emit_with_u16(code, sym.index);
+                self.load_symbol_on_stack(sym);
+            }
+            Expr::Function { req_params, opt_params, eval } => {
+                self.scopes.enter_scope();
+
+                let req_count = req_params.len();
+                let opt_count = opt_params.len();
+                for param in req_params.into_iter() { self.scopes.register_sym(param); };
+                for param in opt_params.into_iter() { self.scopes.register_sym(param); };
+
+                self.compile_expr(*eval);
+                self.emit(op::RETURN);
+
+                let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
+
+                let locked_sym_count = locked_symbols.len();
+                for sym in locked_symbols {
+                    self.load_symbol_on_stack(sym);
+                }
+
+                let const_ptr = self.add_const(BaseObject::Closure(Function {
+                    ins,
+                    num_locals: symbol_count,
+                    num_req_params: req_count,
+                    num_opt_params: opt_count,
+                    locked_values: Vec::new(),
+                }));
+
+                self.emit_with_u16_u16(op::MAKE_FN, const_ptr, locked_sym_count as u16);
             }
             Expr::Infix { op, lhs, rhs } => match op {
                 BinOp::And => self.compile_binary_op_with_jump(op::JUMP_PEEK_AND, lhs, rhs),
@@ -124,6 +149,12 @@ impl Compiler {
             Expr::Prefix { op, rhs } => {
                 self.compile_expr(*rhs);
                 from_pre_op(op).map(|code| self.emit(code));
+            }
+            Expr::Postfix { lhs, postfix } => {
+                match postfix {
+                    Postfix::Call(args) => self.compile_postfix_call(*lhs, args),
+                    _ => todo!()
+                }
             }
             Expr::Ternary {
                 condition,
@@ -188,31 +219,57 @@ impl Compiler {
         }
     }
 
+    fn compile_postfix_call(&mut self, lhs: Expr, args: ExprList) {
+        self.compile_expr(lhs);
+        let arg_count = args.len();
+        for arg in args { self.compile_expr(arg) };
+        self.emit_with_u16(op::CALL, arg_count as u16);
+    }
+
+    fn load_symbol_on_stack(&mut self, sym: SymbolRef) {
+        let code = match sym.scope {
+            ScopeKind::GLOBAL => op::GET_GLOBAL,
+            ScopeKind::LOCAL => op::GET_LOCAL,
+            ScopeKind::LOCKED => op::GET_LOCKED,
+        };
+        self.emit_with_u16(code, sym.index as u16);
+    }
+
     /* Buncha convenience methods for modifying the instructions */
 
+    fn last_ins(&mut self) -> &mut BytesMut {
+        self.scopes.last_ins_mut()
+    }
+
     fn emit(&mut self, code: Op) {
-        self.instructions.put_u8(code);
+        self.last_ins().put_u8(code);
     }
 
     fn emit_with_u8(&mut self, code: Op, operand: u8) {
         self.emit(code);
-        self.instructions.put_u8(operand);
+        self.last_ins().put_u8(operand);
     }
 
     fn emit_with_u8_u16(&mut self, code: Op, operand_1: u8, operand_2: u16) {
         self.emit(code);
-        self.instructions.put_u8(operand_1);
-        self.instructions.put_u16(operand_2);
+        self.last_ins().put_u8(operand_1);
+        self.last_ins().put_u16(operand_2);
+    }
+
+    fn emit_with_u16_u16(&mut self, code: Op, operand_1: u16, operand_2: u16) {
+        self.emit(code);
+        self.last_ins().put_u16(operand_1);
+        self.last_ins().put_u16(operand_2);
     }
 
     fn emit_with_u16(&mut self, code: Op, operand: u16) {
         self.emit(code);
-        self.instructions.put_u16(operand);
+        self.last_ins().put_u16(operand);
     }
 
     fn emit_with_u32(&mut self, code: Op, operand: u32) {
         self.emit(code);
-        self.instructions.put_u32(operand);
+        self.last_ins().put_u32(operand);
     }
 
     // fn emit_bytes(&mut self, bytes: Bytes) {
@@ -227,12 +284,12 @@ impl Compiler {
     }
 
     fn ins_len(&self) -> usize {
-        self.instructions.len()
+        self.scopes.size()
     }
 
     fn overwrite(&mut self, at: usize, data: Bytes) {
         for (i, byte) in data.into_iter().enumerate() {
-            self.instructions[at + i] = byte;
+            self.last_ins()[at + i] = byte;
         }
     }
 
