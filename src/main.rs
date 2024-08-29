@@ -22,9 +22,8 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program("
         const = 55;
-        foo = (a) => a + const + 5;
-        print foo(9);
-        print foo(18);
+        foo = (a) => (b) => (c) => a + b + c + const;
+        print foo(3)(6)(5);
     ");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);

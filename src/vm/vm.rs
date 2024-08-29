@@ -83,7 +83,9 @@ impl VM {
                 }
 
                 op::SET_LOCAL => {
-
+                    let stack_offset = cursor.get_u16() as usize;
+                    let stack_location = self.frame().stack_base + stack_offset;
+                    self.stack[stack_location] = self.stack.pop().unwrap();
                 },
 
                 op::GET_LOCAL => {
@@ -92,7 +94,12 @@ impl VM {
                     self.stack.push(self.stack[stack_location].clone());
                 }
 
-                op::GET_LOCKED => todo!(),
+                op::GET_LOCKED => {
+                    let closed_value_idx = cursor.get_u16() as usize;
+                    self.stack.push(
+                        self.frame().closed_values.get(closed_value_idx).unwrap().clone()
+                    );
+                },
 
                 op::MAKE_LIT_COL => {
                     let _flag = cursor.get_u8();
