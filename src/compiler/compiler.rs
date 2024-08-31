@@ -180,19 +180,19 @@ impl Compiler {
             } => {
                 self.compile_expr(*condition);
 
-                let jmp_if_operand_ptr = self.ins_len() + 1;
+                let jump_if_operand_ptr = self.ins_len() + 1;
                 self.emit_with_u32(op::JUMP_IF_FALSE, u32::MAX);
                 self.compile_stmt_like_expr(*consequence);
 
-                let jmp_operand_ptr = self.ins_len() + 1;
+                let jump_operand_ptr = self.ins_len() + 1;
                 self.emit_with_u32(op::JUMP, u32::MAX);
                 let jnt_destination = self.ins_len();
                 self.compile_stmt_like_expr(*alternative);
-                let jmp_destination = self.ins_len();
+                let jump_destination = self.ins_len();
 
                 // Set correct jump locations
-                self.overwrite_u32(jmp_if_operand_ptr, jnt_destination as u32);
-                self.overwrite_u32(jmp_operand_ptr, jmp_destination as u32)
+                self.overwrite_u32(jump_if_operand_ptr, jnt_destination as u32);
+                self.overwrite_u32(jump_operand_ptr, jump_destination as u32)
             }
             _ => panic!("Unimplemented in compile_expr: {node:?}"),
         };
@@ -200,11 +200,11 @@ impl Compiler {
 
     fn compile_binary_op_with_jump(&mut self, op: Op, lhs: Box<Expr>, rhs: Box<Expr>) {
         self.compile_expr(*lhs);
-        let jmp_operand_ptr = self.ins_len() + 1;
+        let jump_operand_ptr = self.ins_len() + 1;
         self.emit_with_u32(op, u32::MAX);
         self.compile_expr(*rhs);
-        let jmp_destination = self.ins_len();
-        self.overwrite_u32(jmp_operand_ptr, jmp_destination as u32);
+        let jump_destination = self.ins_len();
+        self.overwrite_u32(jump_operand_ptr, jump_destination as u32);
     }
 
     fn compile_former(&mut self, former: Former, flag_base: u8) {
@@ -269,6 +269,12 @@ impl Compiler {
                 }
             });
 
+        // We only need to do this once to ensure we don't start iterating if any of the
+        // collections are empty to begin with. After iteration starts, the `ITER_NEXT`
+        // opcodes are responsible for handling their own emptiness (aren't we all?)
+        let empty_check_ptr = self.ins_len() + 1;
+        self.emit_with_u32(op::ITER_EMPTY_CHECK, u32::MAX);
+
         /* Iterator loop starts here */
 
         /* Load locals */
@@ -317,11 +323,12 @@ impl Compiler {
         if let Some(dest) = jump_ptr_dest {
             self.overwrite_u32(dest, self.ins_len() as u32);
         }
-        
+
         // Iterators are processed in reverse
         for (idx, _) in iter_vars.iter().enumerate().rev() {
             self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iteration_start_ptr);
         }
+        self.overwrite_u32(empty_check_ptr, self.ins_len() as u32);
         self.emit(op::ITER_END);
 
         /* Iterator compilation finished, immediately calling */

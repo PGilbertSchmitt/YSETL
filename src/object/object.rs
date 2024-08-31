@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use bytes::Bytes;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum IterKind {
     Tuple,
     Set,

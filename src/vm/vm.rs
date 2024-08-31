@@ -274,8 +274,8 @@ impl VM {
                 }
 
                 op::DUP_ITER => {
-                    self.frame_mut().dup_iter();  
-                },
+                    self.frame_mut().dup_iter();
+                }
 
                 op::GET_ITER_VAL => {
                     let iter_idx = cursor.get_u8() as usize;
@@ -285,6 +285,13 @@ impl VM {
                 op::GET_ITER_KEY => {
                     let iter_idx = cursor.get_u8() as usize;
                     self.stack.push(self.frame().get_iter_key(iter_idx));
+                }
+
+                op::ITER_EMPTY_CHECK => {
+                    let jump_pos = cursor.get_u32();
+                    if self.frame().any_iter_empty() {
+                        cursor.set_position(jump_pos as u64);
+                    }
                 }
 
                 op::PRINT => {

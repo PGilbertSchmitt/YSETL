@@ -41,6 +41,7 @@ pub const MAKE_ITER: Op = 64;
 pub const DUP_ITER: Op = 65;
 pub const GET_ITER_VAL: Op = 66;
 pub const GET_ITER_KEY: Op = 67;
+pub const ITER_EMPTY_CHECK: Op = 68;
 
 // Builtins
 pub const PRINT: Op = 150;
@@ -118,6 +119,7 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         DUP_ITER => ("DUP_ITER", &[]),
         GET_ITER_VAL => ("GET_ITER_VAL", &[1]),
         GET_ITER_KEY => ("GET_ITER_KEY", &[1]),
+        ITER_EMPTY_CHECK => ("ITER_EMPTY_CHECK", &[4]),
 
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),

@@ -22,7 +22,7 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        foo = (A) => [y : x,y in A];
+        foo = (A) => [x*y : x,y in A];
         print foo([1..4])
     ",
     );
