@@ -21,10 +21,9 @@ pub fn print_structure(rule: Rule, input: &str) {
 
 fn main() {
     let ast = parse_program(
-        "   
-        B = [1..10];
-        foo = (A) => [x+y : x in B, y in A -> x < 5 && y % 2 == 0];
-        print foo([1..5])
+        "
+        foo = (A) => [y : x,y in A];
+        print foo([1..4])
     ",
     );
     // let ast = parse_program("

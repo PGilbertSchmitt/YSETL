@@ -4,7 +4,7 @@ use bytes::Bytes;
 
 use crate::object::object::{BaseObject, IterKind, Object, ObjectOps};
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 struct IterCollection {
     collection: Vec<Object>,
     pos: usize,
@@ -128,6 +128,12 @@ impl Frame {
         self.iterator_mut()
             .collections
             .push(IterCollection::new(obj))
+    }
+
+    pub fn dup_iter(&mut self) {
+        let collections = &mut self.iterator_mut()
+            .collections;
+        collections.push(collections.last().unwrap().clone());
     }
 
     pub fn iter_next(&mut self, iter_idx: usize, mut on_continue: impl FnMut()) {

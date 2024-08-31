@@ -273,7 +273,9 @@ impl VM {
                     self.frame_mut().make_iter(&collection);
                 }
 
-                op::DUP_ITER => todo!(),
+                op::DUP_ITER => {
+                    self.frame_mut().dup_iter();  
+                },
 
                 op::GET_ITER_VAL => {
                     let iter_idx = cursor.get_u8() as usize;

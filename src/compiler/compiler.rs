@@ -269,24 +269,15 @@ impl Compiler {
                 }
             });
 
-        /* Compile Iterator Start Section */
-
-        let iter_next_ins_ptr = self.ins_len() as u32;
-        let iter_var_count = iter_vars.len() as u32;
-        // The jump location for ITER_NEXT will be after all ITER_NEXT instructions (6 bytes each)
-        // and the single ITER_END (1 byte)
-        let iter_next_jump_location = iter_next_ins_ptr + (iter_var_count * 6) + 1;
-        // Iterators are processed in reverse
-        for (idx, _) in iter_vars.iter().enumerate().rev() {
-            self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iter_next_jump_location);
-        }
-        self.emit(op::ITER_END);
+        /* Iterator loop starts here */
 
         /* Load locals */
 
+        let iteration_start_ptr = self.ins_len() as u32;
+
         // Using this `sym_count` assumes that the symbols were registered in the correct order
         let mut sym_count: u16 = 0;
-        for (idx, iter_var) in iter_vars.into_iter().enumerate() {
+        for (idx, iter_var) in iter_vars.iter().enumerate() {
             let idx = idx as u8;
             match iter_var {
                 IterVar::KeyAndValue => {
@@ -307,21 +298,33 @@ impl Compiler {
 
         /* Compile Conditional expression */
 
-        iterator.filter.map(|filter| {
+        let jump_ptr_dest = iterator.filter.map(|filter| {
             self.compile_expr(*filter);
-            self.emit_with_u32(op::JUMP_IF_FALSE, iter_next_ins_ptr);
+            let dest = self.ins_len() + 1;
+            self.emit_with_u32(op::JUMP_IF_FALSE, u32::MAX);
+            dest
         });
 
         /* Compile Output expression */
 
         self.compile_expr(eval);
         self.emit(op::ITER_COLLECT);
-        self.emit_with_u32(op::JUMP, iter_next_ins_ptr);
+
+        /* Increment iterators or finish */
+
+        // Since we now know where the iterate incrementers start, we can update the
+        // pointer of the jump (if it exists)
+        if let Some(dest) = jump_ptr_dest {
+            self.overwrite_u32(dest, self.ins_len() as u32);
+        }
+        
+        // Iterators are processed in reverse
+        for (idx, _) in iter_vars.iter().enumerate().rev() {
+            self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iteration_start_ptr);
+        }
+        self.emit(op::ITER_END);
 
         /* Iterator compilation finished, immediately calling */
-
-        println!("Current symbol table");
-        println!("{:?}", self.scopes.peek_symbols());
 
         let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
 
