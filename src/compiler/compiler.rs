@@ -57,8 +57,8 @@ impl Compiler {
             Stmt::Assign { target, value } => {
                 match target {
                     Bound::Ident(ident) => {
-                        self.compile_expr(value);
                         let sym = self.scopes.register_sym(ident);
+                        self.compile_expr(value);
                         let code = match sym.scope {
                             ScopeKind::GLOBAL => op::SET_GLOBAL,
                             ScopeKind::LOCAL => op::SET_LOCAL,
