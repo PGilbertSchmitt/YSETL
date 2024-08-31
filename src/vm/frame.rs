@@ -86,7 +86,12 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new_as_func(ins: Bytes, return_ptr: u64, stack_base: usize, closed_values: Vec<Object>) -> Self {
+    pub fn new_as_func(
+        ins: Bytes,
+        return_ptr: u64,
+        stack_base: usize,
+        closed_values: Vec<Object>,
+    ) -> Self {
         Self {
             ins,
             return_ptr,
@@ -198,10 +203,16 @@ impl Frame {
     }
 
     fn iterator_at(&self, idx: usize) -> &IterCollection {
-        self.iterator().collections.get(idx).expect("Went past collection bound")
+        self.iterator()
+            .collections
+            .get(idx)
+            .expect("Went past collection bound")
     }
 
     fn iterator_at_mut(&mut self, idx: usize) -> &mut IterCollection {
-        self.iterator_mut().collections.get_mut(idx).expect("Went past collection bound")
+        self.iterator_mut()
+            .collections
+            .get_mut(idx)
+            .expect("Went past collection bound")
     }
 }

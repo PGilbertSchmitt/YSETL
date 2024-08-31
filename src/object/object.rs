@@ -36,7 +36,7 @@ pub enum BaseObject {
     Closure {
         function: Box<Executor>,
         num_req_params: usize,
-        num_opt_params: usize
+        num_opt_params: usize,
     },
 }
 
@@ -88,7 +88,10 @@ impl ObjectOps for BaseObject {
         match &self {
             &BaseObject::Int(x) => *x,
             _ => {
-                panic!("Cannot convert value into integer: {}", self.to_debug_string());
+                panic!(
+                    "Cannot convert value into integer: {}",
+                    self.to_debug_string()
+                );
             }
         }
     }
@@ -98,26 +101,27 @@ impl ObjectOps for BaseObject {
             &BaseObject::Closure {
                 function,
                 num_req_params,
-                num_opt_params
-            } => 
-                (
-                    Executor {
-                        ins: function.ins.clone(),
-                        num_locals: function.num_locals,
-                        locked_values: function.locked_values.clone(),
-                    },
-                    *num_req_params,
-                    *num_opt_params,
-                ),
-            _ => panic!("Could not convert {self:?} into a function")
+                num_opt_params,
+            } => (
+                Executor {
+                    ins: function.ins.clone(),
+                    num_locals: function.num_locals,
+                    locked_values: function.locked_values.clone(),
+                },
+                *num_req_params,
+                *num_opt_params,
+            ),
+            _ => panic!("Could not convert {self:?} into a function"),
         }
     }
 
     fn to_vec(&self) -> Vec<Object> {
         match &self {
             &BaseObject::Tuple(vec) => vec.clone(),
-            &BaseObject::String(str) =>
-                str.split("").map(|str| BaseObject::String(str.to_owned()).wrap()).collect(),
+            &BaseObject::String(str) => str
+                .split("")
+                .map(|str| BaseObject::String(str.to_owned()).wrap())
+                .collect(),
             _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
         }
     }
@@ -147,7 +151,11 @@ impl ObjectOps for BaseObject {
             ),
             // This could change if we also stored the function's string
             // along with the compliled data, but this is good enough for now
-            Self::Closure { function, num_req_params, num_opt_params } => format!(
+            Self::Closure {
+                function,
+                num_req_params,
+                num_opt_params,
+            } => format!(
                 "fn({}, {}?) => [{} locals, {} bytes]",
                 num_req_params,
                 num_opt_params,

@@ -118,7 +118,7 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         DUP_ITER => ("DUP_ITER", &[]),
         GET_ITER_VAL => ("GET_ITER_VAL", &[1]),
         GET_ITER_KEY => ("GET_ITER_KEY", &[1]),
-        
+
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),
         MULT => ("MULT", &[]),

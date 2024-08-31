@@ -20,11 +20,13 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_program("   
+    let ast = parse_program(
+        "   
         B = [1..10];
         foo = (A) => [x+y : x in B, y in A -> x < 5 && y % 2 == 0];
         print foo([1..5])
-    ");
+    ",
+    );
     // let ast = parse_program("
     //     foo = (a) => {print a;  foo(a+1)};
     //     print foo(1);
@@ -43,8 +45,8 @@ fn main() {
                 println!(":: START CLOSURE INSTRUCTIONS [{i}] ::");
                 print_bytecode(&function.ins);
                 println!("::  END CLOSURE INSTRUCTIONS  [{i}] ::\n");
-            },
-            _ => ()
+            }
+            _ => (),
         }
     }
 

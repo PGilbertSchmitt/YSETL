@@ -7,7 +7,7 @@ use bytes::Buf;
 
 use crate::compiler::bytecode::{Bytecode, TUP_BASE};
 use crate::object::object::{BaseObject, Executor, Object, ObjectOps};
-use crate::op::{self, lookup};
+use crate::op;
 
 const MAX_STACK_SIZE: usize = 4096;
 
@@ -17,8 +17,7 @@ trait Stack {
 
 impl Stack for Vec<Object> {
     fn pop_one(&mut self) -> Object {
-        self.pop()
-            .expect("Called pop on an empty stack")
+        self.pop().expect("Called pop on an empty stack")
     }
 }
 
@@ -88,7 +87,7 @@ impl VM {
                     let stack_offset = cursor.get_u16() as usize;
                     let stack_location = self.frame().stack_base + stack_offset;
                     self.stack[stack_location] = self.stack.pop().unwrap();
-                },
+                }
 
                 op::GET_LOCAL => {
                     let stack_offset = cursor.get_u16() as usize;
@@ -99,9 +98,13 @@ impl VM {
                 op::GET_LOCKED => {
                     let closed_value_idx = cursor.get_u16() as usize;
                     self.stack.push(
-                        self.frame().closed_values.get(closed_value_idx).unwrap().clone()
+                        self.frame()
+                            .closed_values
+                            .get(closed_value_idx)
+                            .unwrap()
+                            .clone(),
                     );
-                },
+                }
 
                 op::MAKE_LIT_COL => {
                     let _flag = cursor.get_u8();
@@ -115,13 +118,15 @@ impl VM {
                     let range_start = self.stack.pop_one().inner_int();
                     // TODO: This is incomplete. There are several interactions with inclusive/exclusive and
                     // low->high/high->low ranges.
-                    let elements: Vec<Object> = (range_start..range_end).map(|i| BaseObject::Int(i).wrap()).collect();
+                    let elements: Vec<Object> = (range_start..range_end)
+                        .map(|i| BaseObject::Int(i).wrap())
+                        .collect();
                     if flag & TUP_BASE != 0 {
                         self.stack.push(BaseObject::Tuple(elements).wrap());
                     } else {
                         todo!();
                     }
-                },
+                }
 
                 op::MAKE_FN => {
                     let const_ptr = cursor.get_u16() as usize;
@@ -130,12 +135,15 @@ impl VM {
                     let params_start = self.stack.len() - locked_param_count;
                     let (mut function, num_req_params, num_opt_params) = function.inner_fn();
                     function.locked_values = self.stack.drain(params_start..).collect();
-                    self.stack.push(BaseObject::Closure {
-                        function: Box::new(function),
-                        num_req_params,
-                        num_opt_params,
-                    }.wrap());
-                },
+                    self.stack.push(
+                        BaseObject::Closure {
+                            function: Box::new(function),
+                            num_req_params,
+                            num_opt_params,
+                        }
+                        .wrap(),
+                    );
+                }
 
                 op::POP => {
                     self.stack.pop_one();
@@ -176,7 +184,8 @@ impl VM {
 
                 op::CALL => {
                     let arg_count = cursor.get_u16() as usize;
-                    let (fn_obj, num_req_params, num_opt_params) = self.stack[self.stack.len() - arg_count - 1]
+                    let (fn_obj, num_req_params, num_opt_params) = self.stack
+                        [self.stack.len() - arg_count - 1]
                         .clone()
                         .inner_fn();
                     let total_params = num_req_params + num_opt_params;
@@ -203,7 +212,7 @@ impl VM {
                         fn_obj.locked_values.clone(),
                     ));
                     cursor = Cursor::new(fn_obj.ins);
-                },
+                }
 
                 op::RETURN => {
                     let last_frame = self.frames.pop().unwrap();
@@ -213,7 +222,7 @@ impl VM {
                     self.stack.truncate(last_frame.stack_base); // Remove all args and local vars
                     self.stack.pop(); // Remove the called function
                     self.stack.push(return_value);
-                },
+                }
 
                 op::ITER_START => {
                     let iter_idx = cursor.get_u16();
@@ -228,7 +237,7 @@ impl VM {
                     for _ in 0..iterator.num_locals {
                         self.stack.push(self.false_ref.clone());
                     }
-                    
+
                     self.frames.push(Frame::new_as_iter(
                         iterator.ins.clone(),
                         cursor.position(),
@@ -242,13 +251,14 @@ impl VM {
                 op::ITER_NEXT => {
                     let iter_idx = cursor.get_u8() as usize;
                     let jmp_ptr = cursor.get_u32() as u64;
-                    self.frame_mut().iter_next(iter_idx, || cursor.set_position(jmp_ptr));
-                },
+                    self.frame_mut()
+                        .iter_next(iter_idx, || cursor.set_position(jmp_ptr));
+                }
 
                 op::ITER_COLLECT => {
                     let item = self.stack.pop_one();
                     self.frame_mut().iter_collect(item);
-                },
+                }
 
                 op::ITER_END => {
                     let last_frame = self.frames.pop().unwrap();
@@ -256,7 +266,7 @@ impl VM {
                     cursor.set_position(last_frame.return_ptr);
                     self.stack.truncate(last_frame.stack_base); // Remove local vars
                     self.stack.push(last_frame.collector());
-                },
+                }
 
                 op::MAKE_ITER => {
                     let collection = self.stack.pop_one();
@@ -268,12 +278,12 @@ impl VM {
                 op::GET_ITER_VAL => {
                     let iter_idx = cursor.get_u8() as usize;
                     self.stack.push(self.frame().get_iter_val(iter_idx));
-                },
+                }
 
                 op::GET_ITER_KEY => {
                     let iter_idx = cursor.get_u8() as usize;
                     self.stack.push(self.frame().get_iter_key(iter_idx));
-                },
+                }
 
                 op::PRINT => {
                     println!("{}", self.stack.pop_one().to_s());

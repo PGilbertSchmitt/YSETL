@@ -4,7 +4,8 @@ use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 use crate::object::object::{BaseObject, Executor};
 use crate::op::{self, Op};
 use crate::parser::ast::{
-    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SingleIterator, Stmt, StmtList
+    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SingleIterator,
+    Stmt, StmtList,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -113,13 +114,21 @@ impl Compiler {
                     .unwrap_or_else(|| panic!("Symbol \"{name}\" was never declared"));
                 self.load_symbol_on_stack(sym);
             }
-            Expr::Function { req_params, opt_params, eval } => {
+            Expr::Function {
+                req_params,
+                opt_params,
+                eval,
+            } => {
                 self.scopes.enter_scope();
 
                 let req_count = req_params.len();
                 let opt_count = opt_params.len();
-                for param in req_params.into_iter() { self.scopes.register_sym(param); };
-                for param in opt_params.into_iter() { self.scopes.register_sym(param); };
+                for param in req_params.into_iter() {
+                    self.scopes.register_sym(param);
+                }
+                for param in opt_params.into_iter() {
+                    self.scopes.register_sym(param);
+                }
 
                 self.compile_expr(*eval);
                 // TODO: This return is only necessary for implicit-return functions
@@ -160,12 +169,10 @@ impl Compiler {
                 self.compile_expr(*rhs);
                 from_pre_op(op).map(|code| self.emit(code));
             }
-            Expr::Postfix { lhs, postfix } => {
-                match postfix {
-                    Postfix::Call(args) => self.compile_postfix_call(*lhs, args),
-                    _ => todo!()
-                }
-            }
+            Expr::Postfix { lhs, postfix } => match postfix {
+                Postfix::Call(args) => self.compile_postfix_call(*lhs, args),
+                _ => todo!(),
+            },
             Expr::Ternary {
                 condition,
                 consequence,
@@ -222,16 +229,15 @@ impl Compiler {
                 self.compile_expr(*range.end);
                 self.emit_with_u8(op::MAKE_RN_COL, flag);
             }
-            Former::Iterator {
-                output,
-                iterator,
-            } => self.compile_iterator_former(*output, iterator, flag_base),
+            Former::Iterator { output, iterator } => {
+                self.compile_iterator_former(*output, iterator, flag_base)
+            }
         }
     }
 
     fn compile_iterator_former(&mut self, eval: Expr, iterator: Iterator, flag_base: u8) {
         self.scopes.enter_scope();
-        
+
         /* Register local symbols, compile iterator collection expressions */
 
         if iterator.iterators.len() > 255 {
@@ -239,23 +245,29 @@ impl Compiler {
         };
         let mut iter_vars: Vec<IterVar> = vec![];
         // This line is kinda funny if you think about it, and also a nightmare
-        iterator.iterators.into_iter().for_each(|single_iter| {
-            match single_iter {
+        iterator
+            .iterators
+            .into_iter()
+            .for_each(|single_iter| match single_iter {
                 SingleIterator::In { bounds, expr } => {
-                    let bound_count: u8 = bounds.len().try_into().expect(
-                        "Cannot support an iterator with more than 255 bounds"
-                    );
+                    let bound_count: u8 = bounds
+                        .len()
+                        .try_into()
+                        .expect("Cannot support an iterator with more than 255 bounds");
                     self.compile_value_iterator(bounds, expr);
                     for _ in 0..bound_count {
                         iter_vars.push(IterVar::Value);
                     }
                 }
-                SingleIterator::Select { collection, key, value } => {
+                SingleIterator::Select {
+                    collection,
+                    key,
+                    value,
+                } => {
                     self.compile_key_value_iterator(collection, key, value);
                     iter_vars.push(IterVar::KeyAndValue);
                 }
-            }
-        });
+            });
 
         /* Compile Iterator Start Section */
 
@@ -310,9 +322,9 @@ impl Compiler {
 
         println!("Current symbol table");
         println!("{:?}", self.scopes.peek_symbols());
-        
+
         let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
-        
+
         let locked_sym_count = locked_symbols.len() as u16;
         for sym in locked_symbols {
             self.load_symbol_on_stack(sym);
@@ -330,17 +342,27 @@ impl Compiler {
 
     fn compile_value_iterator(&mut self, bounds: BoundList, collection: Expr) {
         self.compile_expr(collection);
-        
+
         for (idx, bound) in bounds.into_iter().enumerate() {
-            self.emit(if idx == 0 { op::MAKE_ITER } else { op::DUP_ITER });
+            self.emit(if idx == 0 {
+                op::MAKE_ITER
+            } else {
+                op::DUP_ITER
+            });
             self.register_bound(bound);
         }
     }
 
-    fn compile_key_value_iterator(&mut self, collection: String, key_bound: Bound, value_bound: Bound) {
-        let collection_sym = self.scopes.lookup_sym(&collection).expect(
-            "Key-Value iterator must be an initialized variable"
-        );
+    fn compile_key_value_iterator(
+        &mut self,
+        collection: String,
+        key_bound: Bound,
+        value_bound: Bound,
+    ) {
+        let collection_sym = self
+            .scopes
+            .lookup_sym(&collection)
+            .expect("Key-Value iterator must be an initialized variable");
         self.load_symbol_on_stack(collection_sym);
         self.emit(op::MAKE_ITER);
         self.register_bound(key_bound);
@@ -357,7 +379,9 @@ impl Compiler {
     fn compile_postfix_call(&mut self, lhs: Expr, args: ExprList) {
         self.compile_expr(lhs);
         let arg_count = args.len();
-        for arg in args { self.compile_expr(arg) };
+        for arg in args {
+            self.compile_expr(arg)
+        }
         self.emit_with_u16(op::CALL, arg_count as u16);
     }
 

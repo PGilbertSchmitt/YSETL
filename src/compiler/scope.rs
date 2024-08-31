@@ -1,5 +1,5 @@
-use std::{collections::HashMap, rc::Rc};
 use bytes::{Bytes, BytesMut};
+use std::{collections::HashMap, rc::Rc};
 
 #[derive(Debug, PartialEq)]
 pub enum ScopeKind {
@@ -61,11 +61,11 @@ impl Scope {
 }
 
 #[derive(Debug)]
-pub struct ScopeStack (Vec<Scope>);
+pub struct ScopeStack(Vec<Scope>);
 
 impl ScopeStack {
     pub fn new() -> Self {
-        Self (vec![Scope::new()])
+        Self(vec![Scope::new()])
     }
 
     pub fn size(&self) -> usize {
@@ -87,17 +87,27 @@ impl ScopeStack {
 
     pub fn exit_scope(&mut self) -> (Bytes, usize, Vec<SymbolRef>) {
         if self.size() < 2 {
-            panic!("Expected there to be more than 1 scope, but ended up with {}. \
-            Scoping was not handled properly by compiler", self.size());
-        } 
+            panic!(
+                "Expected there to be more than 1 scope, but ended up with {}. \
+            Scoping was not handled properly by compiler",
+                self.size()
+            );
+        }
         let scope = self.0.pop().unwrap();
-        (scope.instructions.freeze(), scope.symbols.stack_idx, scope.locked)
+        (
+            scope.instructions.freeze(),
+            scope.symbols.stack_idx,
+            scope.locked,
+        )
     }
 
     pub fn final_scope(self) -> (Bytes, usize) {
         if self.size() != 1 {
-            panic!("Expected there to be exactly 1 scope, but compilation ended \
-            with {}. Scoping was not handled properly by compiler", self.size());
+            panic!(
+                "Expected there to be exactly 1 scope, but compilation ended \
+            with {}. Scoping was not handled properly by compiler",
+                self.size()
+            );
         }
         let scope = self.0.into_iter().next().unwrap();
         (scope.instructions.freeze(), scope.symbols.stack_idx)
@@ -112,11 +122,16 @@ impl ScopeStack {
         };
         let registry = self.last_symbols_mut();
 
-        registry.table
+        registry
+            .table
             .entry(id.to_owned())
             .or_insert_with(|| {
                 registry.stack_idx += 1;
-                Rc::new(Symbol { scope, index, name: id })
+                Rc::new(Symbol {
+                    scope,
+                    index,
+                    name: id,
+                })
             })
             .clone()
     }
@@ -129,9 +144,8 @@ impl ScopeStack {
             return Some(sym.clone());
         };
 
-        let (idx, sym) = scopes.find_map(|(i, scope)| {
-            scope.symbols.table.get(id).map(|sym| (i+1, sym.clone()))
-        })?;
+        let (idx, sym) = scopes
+            .find_map(|(i, scope)| scope.symbols.table.get(id).map(|sym| (i + 1, sym.clone())))?;
 
         if sym.scope == ScopeKind::GLOBAL {
             return Some(sym);
