@@ -23,13 +23,24 @@ pub const POP: Op = 20;
 
 // Control Flow
 pub const JUMP: Op = 30;
-pub const JUMP_NOT_TRUE: Op = 31;
-pub const JUMP_PEEK_AND: Op = 32;
-pub const JUMP_PEEK_OR: Op = 33;
-pub const JUMP_PEEK_NULL: Op = 34;
+pub const JUMP_IF_FALSE: Op = 31;
+pub const JUMP_IF_TRUE: Op = 32; // More convenient than pushing an extra NOT operation
+pub const JUMP_PEEK_AND: Op = 33;
+pub const JUMP_PEEK_OR: Op = 34;
+pub const JUMP_PEEK_NULL: Op = 35;
 
-pub const CALL: Op = 35;
-pub const RETURN: Op = 36;
+pub const CALL: Op = 40;
+pub const RETURN: Op = 41;
+
+// Iterator-specific
+pub const ITER_START: Op = 60;
+pub const ITER_NEXT: Op = 61;
+pub const ITER_COLLECT: Op = 62;
+pub const ITER_END: Op = 63;
+pub const MAKE_ITER: Op = 64;
+pub const DUP_ITER: Op = 65;
+pub const GET_ITER_VAL: Op = 66;
+pub const GET_ITER_KEY: Op = 67;
 
 // Builtins
 pub const PRINT: Op = 150;
@@ -68,7 +79,7 @@ pub const TAIL: Op = 245;
 pub const INIT: Op = 246;
 
 // DEBUG
-pub const DBG_PRINT_STACK_TOP: Op = 40;
+pub const DBG_PRINT_STACK_TOP: Op = 255;
 
 // Provides the name of an opcode, and the number and byte-lengths of its operands
 pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
@@ -90,7 +101,8 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         PRINT => ("PRINT", &[]),
 
         JUMP => ("JUMP", &[4]),
-        JUMP_NOT_TRUE => ("JUMP_NOT_TRUE", &[4]),
+        JUMP_IF_FALSE => ("JUMP_IF_FALSE", &[4]),
+        JUMP_IF_TRUE => ("JUMP_IF_TRUE", &[4]),
         JUMP_PEEK_AND => ("JUMP_PEEK_AND", &[4]),
         JUMP_PEEK_OR => ("JUMP_PEEK_OR", &[4]),
         JUMP_PEEK_NULL => ("JUMP_PEEK_NULL", &[4]),
@@ -98,6 +110,15 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         CALL => ("CALL", &[2]),
         RETURN => ("RETURN", &[]),
 
+        ITER_START => ("ITER_START", &[2, 2, 1]),
+        ITER_NEXT => ("ITER_NEXT", &[1, 4]),
+        ITER_COLLECT => ("ITER_COLLECT", &[]),
+        ITER_END => ("ITER_END", &[]),
+        MAKE_ITER => ("MAKE_ITER", &[]),
+        DUP_ITER => ("DUP_ITER", &[]),
+        GET_ITER_VAL => ("GET_ITER_VAL", &[1]),
+        GET_ITER_KEY => ("GET_ITER_KEY", &[1]),
+        
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),
         MULT => ("MULT", &[]),

@@ -20,11 +20,15 @@ pub fn print_structure(rule: Rule, input: &str) {
 }
 
 fn main() {
-    let ast = parse_program("
-        const = 55;
-        foo = (a) => (b) => (c) => a + b + c + const;
-        print foo(3)(6)(5);
+    let ast = parse_program("   
+        B = [1..10];
+        foo = (A) => [x+y : x in B, y in A -> x < 5 && y % 2 == 0];
+        print foo([1..5])
     ");
+    // let ast = parse_program("
+    //     foo = (a) => {print a;  foo(a+1)};
+    //     print foo(1);
+    // ");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");
@@ -35,13 +39,19 @@ fn main() {
 
     for (i, c) in bc.constants.iter().enumerate() {
         match c {
-            BaseObject::Closure(cl) => {
+            BaseObject::Closure { function, .. } => {
                 println!(":: START CLOSURE INSTRUCTIONS [{i}] ::");
-                print_bytecode(&cl.ins);
+                print_bytecode(&function.ins);
                 println!("::  END CLOSURE INSTRUCTIONS  [{i}] ::\n");
             },
             _ => ()
         }
+    }
+
+    for (idx, iter) in bc.iterators.iter().enumerate() {
+        println!(":: START ITERATOR INSTRUCTIONS [{idx}] ::");
+        print_bytecode(&iter.ins);
+        println!("::  END ITERATOR INSTRUCTIONS  [{idx}] ::\n");
     }
 
     println!(":: START EXECUTION ::");

@@ -2,13 +2,23 @@ use std::rc::Rc;
 
 use bytes::Bytes;
 
+#[derive(Debug)]
+pub enum IterKind {
+    Tuple,
+    Set,
+    String,
+}
+
 pub trait ObjectOps {
     fn is_truthy(&self) -> bool;
     fn is_null(&self) -> bool;
     fn truthy_convert(&self) -> Self;
     fn not(&self) -> Self;
     fn negate(&self) -> Self;
-    fn inner_fn(&self) -> Function;
+    fn inner_int(&self) -> i64;
+    fn inner_fn(&self) -> (Executor, usize, usize);
+    fn to_vec(&self) -> Vec<Object>;
+    fn iter_kind(&self) -> IterKind;
 
     fn to_s(&self) -> String;
     fn to_debug_string(&self) -> String;
@@ -23,7 +33,11 @@ pub enum BaseObject {
     Float(f64),
     String(String),
     Tuple(Vec<Object>),
-    Closure(Function),
+    Closure {
+        function: Box<Executor>,
+        num_req_params: usize,
+        num_opt_params: usize
+    },
 }
 
 impl BaseObject {
@@ -70,16 +84,49 @@ impl ObjectOps for BaseObject {
         }
     }
 
-    fn inner_fn(&self) -> Function {
+    fn inner_int(&self) -> i64 {
         match &self {
-            &BaseObject::Closure(function) => Function {
-                ins: function.ins.clone(),
-                num_locals: function.num_locals,
-                num_req_params: function.num_req_params,
-                num_opt_params: function.num_opt_params,
-                locked_values: function.locked_values.clone(),
-            },
+            &BaseObject::Int(x) => *x,
+            _ => {
+                panic!("Cannot convert value into integer: {}", self.to_debug_string());
+            }
+        }
+    }
+
+    fn inner_fn(&self) -> (Executor, usize, usize) {
+        match &self {
+            &BaseObject::Closure {
+                function,
+                num_req_params,
+                num_opt_params
+            } => 
+                (
+                    Executor {
+                        ins: function.ins.clone(),
+                        num_locals: function.num_locals,
+                        locked_values: function.locked_values.clone(),
+                    },
+                    *num_req_params,
+                    *num_opt_params,
+                ),
             _ => panic!("Could not convert {self:?} into a function")
+        }
+    }
+
+    fn to_vec(&self) -> Vec<Object> {
+        match &self {
+            &BaseObject::Tuple(vec) => vec.clone(),
+            &BaseObject::String(str) =>
+                str.split("").map(|str| BaseObject::String(str.to_owned()).wrap()).collect(),
+            _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
+        }
+    }
+
+    fn iter_kind(&self) -> IterKind {
+        match &self {
+            &BaseObject::Tuple(_) => IterKind::Tuple,
+            &BaseObject::String(_) => IterKind::String,
+            _ => unimplemented!(),
         }
     }
 
@@ -100,38 +147,22 @@ impl ObjectOps for BaseObject {
             ),
             // This could change if we also stored the function's string
             // along with the compliled data, but this is good enough for now
-            Self::Closure(func) => format!(
+            Self::Closure { function, num_req_params, num_opt_params } => format!(
                 "fn({}, {}?) => [{} locals, {} bytes]",
-                func.num_req_params,
-                func.num_opt_params,
-                func.num_locals,
-                func.ins.len(),
+                num_req_params,
+                num_opt_params,
+                function.num_locals,
+                function.ins.len(),
             ),
         }
     }
 
     fn to_debug_string(&self) -> String {
         match self {
-            Self::Null => String::from("null"),
-            Self::False => String::from("false"),
-            Self::True => String::from("true"),
             Self::Int(x) => format!("i{x}"),
             Self::Float(x) => format!("f{x}"),
             Self::String(val) => format!("\"{val}\""),
-            Self::Tuple(vals) => format!(
-                "[{}]",
-                vals.iter()
-                    .map(|o| o.to_debug_string())
-                    .collect::<Vec<String>>()
-                    .join(",")
-            ),
-            Self::Closure(func) => format!(
-                "fn({}, {}?) => [{} locals, {} bytes]",
-                func.num_req_params,
-                func.num_opt_params,
-                func.num_locals,
-                func.ins.len(),
-            )
+            _ => self.to_s(),
         }
     }
 }
@@ -166,8 +197,20 @@ impl ObjectOps for Object {
         self.0.negate().wrap()
     }
 
-    fn inner_fn(&self) -> Function {
+    fn inner_int(&self) -> i64 {
+        self.0.inner_int()
+    }
+
+    fn inner_fn(&self) -> (Executor, usize, usize) {
         self.0.inner_fn()
+    }
+
+    fn to_vec(&self) -> Vec<Object> {
+        self.0.to_vec()
+    }
+
+    fn iter_kind(&self) -> IterKind {
+        self.0.iter_kind()
     }
 
     fn to_s(&self) -> String {
@@ -179,15 +222,14 @@ impl ObjectOps for Object {
     }
 }
 
-// This is separated from the Closure enum type for 2 reasons:
+// This is separated from the Closure enum type for 3 reasons:
+// - Re-used for Iterators
 // - Will probably box this later to keep the BaseObject size small
 // - Custom `PartialEq` implementation (just in case)
 #[derive(Debug)]
-pub struct Function {
+pub struct Executor {
     pub ins: Bytes,
     pub num_locals: usize,
-    pub num_req_params: usize,
-    pub num_opt_params: usize,
     pub locked_values: Vec<Object>,
 }
 
@@ -196,18 +238,8 @@ pub struct Function {
 // functions should be given unique IDs by the compiler.
 // If function over-riding ever gets implemented, this equality check should also
 // make sure that the overrides match.
-impl PartialEq for Function {
+impl PartialEq for Executor {
     fn eq(&self, other: &Self) -> bool {
-        (
-            &self.ins,
-            self.num_locals,
-            self.num_req_params,
-            self.num_opt_params,
-        ) == (
-            &other.ins,
-            self.num_locals,
-            self.num_req_params,
-            self.num_opt_params,
-        )
+        &self.ins == &other.ins && self.num_locals == self.num_locals
     }
 }

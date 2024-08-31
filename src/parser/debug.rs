@@ -80,7 +80,6 @@ impl Display for Rule {
             Rule::bound_rest => write!(f, "bound_rest"),
             Rule::in_iterator => write!(f, "in_iterator"),
             Rule::select_iterator_single => write!(f, "select_iterator_single"),
-            Rule::select_iterator_multi => write!(f, "select_iterator_multi"),
             Rule::iterator_list => write!(f, "iterator_list"),
             Rule::iterator => write!(f, "iterator"),
 

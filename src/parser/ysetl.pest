@@ -50,7 +50,6 @@ comma      = _{ "," }
 lodash     = _{ "_" }
 b_slash    = _{ "\\" }
 quote      = _{ "\"" }
-percent    = _{ "%" }
 pipe       = _{ "|" }
 dot        = _{ "." }
 qst        = _{ "?" }
@@ -74,6 +73,7 @@ plus     = { "+" }
 dash     = { "-" }
 star     = { "*" }
 slash    = { "/" }
+percent  = { "%" }
 bang     = { "!" }
 hash     = { "#" }
 caret    = { "^" }
@@ -125,6 +125,7 @@ binary_op = _{
   | at
   | star
   | slash
+  | percent
   | plus
   | dash
   | amp
@@ -220,12 +221,12 @@ bound_list_wrapped = _{ l_brack ~ bound_list? ~ r_brack }
 
 silent_in              = _{ "in" }
 in_iterator            =  { bound_list ~ silent_in ~ expr }
-select_iterator_single =  { bound ~ eq ~ ident ~ l_paren ~ bound_list ~ r_paren }
-select_iterator_multi  =  { bound ~ eq ~ ident ~ l_brace ~ bound_list ~ r_brace }
+select_iterator_single =  { bound ~ eq ~ ident ~ l_paren ~ bound ~ r_paren }
+// select_iterator_multi  =  { bound ~ eq ~ ident ~ l_brace ~ bound ~ r_brace }
 single_iterator        = _{
   | in_iterator
   | select_iterator_single
-  | select_iterator_multi
+  // | select_iterator_multi
 }
 iterator_list          =  { single_iterator ~ (comma ~ single_iterator)* ~ comma? }
 iterator_where         = _{ arrow | kw_where }
@@ -248,10 +249,9 @@ func_literal = { param_list ~ fat_arrow ~ expr }
 
 // Postfix Selectors
 
-
 fn_call     = { l_paren ~ expr_list? ~ r_paren }
 index_call  = { l_brack ~ expr ~ r_brack }
-pick_call   = { l_brace ~ expr_list ~ r_brace }
+pick_call   = { l_brace ~ expr ~ r_brace }
 slice_call  = { l_brack ~ expr? ~ range_op ~ expr? ~ r_brack }
 postfix_selector = _{
   | fn_call
@@ -286,7 +286,6 @@ cond_then = _{
 }
 
 ternary_expr = !{ kw_if ~ expr ~ qst ~ stmt ~ colon ~ stmt }
-
 
 // The only kinds of expression which can appear inside a case condition
 // are the non-conditional kinds which can be immediately executed without

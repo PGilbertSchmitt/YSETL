@@ -54,15 +54,10 @@ pub enum SingleIterator {
         bounds: BoundList,
         expr: Expr,
     },
-    SelectOne {
-        bound: Bound,
+    Select {
         collection: String,
-        list: BoundList,
-    },
-    SelectMany {
-        bound: Bound,
-        collection: String,
-        list: BoundList,
+        key: Bound,
+        value: Bound,
     },
 }
 
@@ -108,12 +103,12 @@ pub struct SwitchCase {
 pub enum Postfix {
     Call(ExprList),
     Index(Box<Expr>),
+    Pick(Box<Expr>),
     Slice {
         inclusive: bool,
         start: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
     },
-    Pick(ExprList),
 }
 
 #[derive(Debug)]

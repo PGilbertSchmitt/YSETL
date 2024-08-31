@@ -82,7 +82,8 @@ lazy_static::lazy_static! {
             .op(Op::infix(Rule::plus, Left) |
                 Op::infix(Rule::dash, Left))
             .op(Op::infix(Rule::star, Left) |
-                Op::infix(Rule::slash, Left))
+                Op::infix(Rule::slash, Left) |
+                Op::infix(Rule::percent, Left))
             .op(Op::infix(Rule::dbl_star, Right))
             // Reduce operator
             .op(Op::infix(Rule::dbl_qst, Right))
@@ -338,8 +339,8 @@ fn parse_postfix(lhs: ExprResult, postfix: Pair<Rule>) -> ExprResult {
     let postfix = match postfix.as_rule() {
         Rule::fn_call => parse_fn_call(postfix)?,
         Rule::index_call => parse_index_call(postfix)?,
-        Rule::slice_call => parse_range_call(postfix)?,
         Rule::pick_call => parse_pick_call(postfix)?,
+        Rule::slice_call => parse_range_call(postfix)?,
         _ => unreachable!(),
     };
     Ok(Expr::Postfix {
@@ -361,6 +362,12 @@ fn parse_fn_call(postfix: Pair<Rule>) -> PostfixResult {
 fn parse_index_call(postfix: Pair<Rule>) -> PostfixResult {
     let expr = parse_expr(careful_unwrap(postfix.into_inner().next())?)?;
     Ok(Postfix::Index(Box::new(expr)))
+}
+
+// pick_call([EXPR])
+fn parse_pick_call(postfix: Pair<Rule>) -> PostfixResult {
+    let expr = parse_expr(careful_unwrap(postfix.into_inner().next())?)?;
+    Ok(Postfix::Pick(Box::new(expr)))
 }
 
 // range_call([EXPR, RANGE_OP, EXPR])
@@ -401,12 +408,6 @@ fn parse_range_call(postfix: Pair<Rule>) -> PostfixResult {
     })
 }
 
-// pick_call([EXPR_LIST])
-fn parse_pick_call(postfix: Pair<Rule>) -> PostfixResult {
-    let args = careful_unwrap(postfix.into_inner().next())?;
-    Ok(Postfix::Pick(parse_expr_list(args)?))
-}
-
 fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
     let op = match op.as_rule() {
         Rule::dbl_qst => BinOp::Nullcoel,
@@ -430,7 +431,7 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::pipe => BinOp::BitOr,
         Rule::caret => BinOp::BitXor,
         Rule::kw_impl => BinOp::Impl,
-        Rule::kw_mod => BinOp::Mod,
+        Rule::kw_mod | Rule::percent => BinOp::Mod,
         Rule::kw_in => BinOp::In,
         Rule::kw_notin => BinOp::Notin,
         Rule::kw_subset => BinOp::Subset,
@@ -482,7 +483,7 @@ fn parse_iterator_list(pair: Pair<Rule>) -> Result<IteratorList, YsetlParseError
 fn parse_single_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
     match pair.as_rule() {
         Rule::in_iterator => parse_in_iterator(pair),
-        Rule::select_iterator_single | Rule::select_iterator_multi => parse_select_iterator(pair),
+        Rule::select_iterator_single => parse_select_iterator(pair),
         _ => unreachable!(),
     }
 }
@@ -498,27 +499,17 @@ fn parse_in_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
     })
 }
 
-// select_iterator_single([BOUND, IDENT, BOUND_LIST])
-// select_iterator_multi([BOUND, IDENT, BOUND_LIST])
+// select_iterator_single([BOUND, IDENT, BOUND])
 fn parse_select_iterator(pair: Pair<Rule>) -> SingleIteratorResult {
-    let single = pair.as_rule() == Rule::select_iterator_single;
     let mut parts = pair.into_inner();
-    let bound = parse_bound(careful_unwrap(parts.next())?);
+    let value_bound = parse_bound(careful_unwrap(parts.next())?);
     let collection = careful_unwrap(parts.next())?.as_str().to_owned();
-    let bound_list = parse_bound_list(careful_unwrap(parts.next())?);
-    if single {
-        Ok(SingleIterator::SelectOne {
-            bound,
-            collection,
-            list: bound_list,
-        })
-    } else {
-        Ok(SingleIterator::SelectMany {
-            bound: bound,
-            collection,
-            list: bound_list,
-        })
-    }
+    let key_bound = parse_bound(careful_unwrap(parts.next())?);
+    Ok(SingleIterator::Select {
+        collection,
+        key: key_bound,
+        value: value_bound,
+    })
 }
 
 // TODO: Try implementing using iterator.try_fold and std::ops::ControlFlow

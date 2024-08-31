@@ -5,9 +5,9 @@ use super::frame::Frame;
 use super::preop::execute_pre_op;
 use bytes::Buf;
 
-use crate::compiler::bytecode::Bytecode;
-use crate::object::object::{BaseObject, Object, ObjectOps};
-use crate::op;
+use crate::compiler::bytecode::{Bytecode, TUP_BASE};
+use crate::object::object::{BaseObject, Executor, Object, ObjectOps};
+use crate::op::{self, lookup};
 
 const MAX_STACK_SIZE: usize = 4096;
 
@@ -18,12 +18,13 @@ trait Stack {
 impl Stack for Vec<Object> {
     fn pop_one(&mut self) -> Object {
         self.pop()
-            .unwrap_or_else(|| panic!("Called pop on an empty stack"))
+            .expect("Called pop on an empty stack")
     }
 }
 
 pub struct VM {
     constants: Vec<Object>,
+    base_iterators: Vec<Executor>,
     frames: Vec<Frame>,
     stack: Vec<Object>,
     globals: Vec<Object>,
@@ -40,8 +41,9 @@ impl VM {
         let false_ref = BaseObject::False.wrap();
 
         VM {
-            frames: vec![Frame::new(bc.instructions, 0, 0, vec![])],
+            frames: vec![Frame::new_as_func(bc.instructions, 0, 0, vec![])],
             constants: bc.constants.into_iter().map(BaseObject::wrap).collect(),
+            base_iterators: bc.iterators,
             stack: Vec::with_capacity(MAX_STACK_SIZE),
             // Insertions can happen in any order, and uninitialized globals are hoisted, so
             // the globals vec is initialized to its known size with every space filled with null.
@@ -107,16 +109,32 @@ impl VM {
                     todo!();
                 }
 
-                op::MAKE_RN_COL => todo!(),
+                op::MAKE_RN_COL => {
+                    let flag = cursor.get_u8();
+                    let range_end = self.stack.pop_one().inner_int();
+                    let range_start = self.stack.pop_one().inner_int();
+                    // TODO: This is incomplete. There are several interactions with inclusive/exclusive and
+                    // low->high/high->low ranges.
+                    let elements: Vec<Object> = (range_start..range_end).map(|i| BaseObject::Int(i).wrap()).collect();
+                    if flag & TUP_BASE != 0 {
+                        self.stack.push(BaseObject::Tuple(elements).wrap());
+                    } else {
+                        todo!();
+                    }
+                },
 
                 op::MAKE_FN => {
                     let const_ptr = cursor.get_u16() as usize;
                     let locked_param_count = cursor.get_u16() as usize;
                     let function = self.constants[const_ptr as usize].clone();
                     let params_start = self.stack.len() - locked_param_count;
-                    let mut function = function.inner_fn();
+                    let (mut function, num_req_params, num_opt_params) = function.inner_fn();
                     function.locked_values = self.stack.drain(params_start..).collect();
-                    self.stack.push(BaseObject::Closure(function).wrap());
+                    self.stack.push(BaseObject::Closure {
+                        function: Box::new(function),
+                        num_req_params,
+                        num_opt_params,
+                    }.wrap());
                 },
 
                 op::POP => {
@@ -128,7 +146,7 @@ impl VM {
                     cursor.set_position(jmp_pos as u64);
                 }
 
-                op::JUMP_NOT_TRUE => {
+                op::JUMP_IF_FALSE => {
                     let jmp_pos = cursor.get_u32();
                     if !self.stack.pop_one().is_truthy() {
                         cursor.set_position(jmp_pos as u64);
@@ -158,11 +176,11 @@ impl VM {
 
                 op::CALL => {
                     let arg_count = cursor.get_u16() as usize;
-                    let fn_obj = self.stack[self.stack.len() - arg_count - 1]
+                    let (fn_obj, num_req_params, num_opt_params) = self.stack[self.stack.len() - arg_count - 1]
                         .clone()
                         .inner_fn();
-                    let total_params = fn_obj.num_req_params + fn_obj.num_opt_params;
-                    if arg_count < fn_obj.num_req_params {
+                    let total_params = num_req_params + num_opt_params;
+                    if arg_count < num_req_params {
                         panic!("Didn't provide enough arguments to function");
                     } else if arg_count > total_params {
                         panic!("Provided too many arguments to function");
@@ -178,7 +196,7 @@ impl VM {
                         self.stack.push(self.null_ref.clone());
                     }
 
-                    self.frames.push(Frame::new(
+                    self.frames.push(Frame::new_as_func(
                         fn_obj.ins.clone(),
                         cursor.position(),
                         base_pointer,
@@ -195,6 +213,66 @@ impl VM {
                     self.stack.truncate(last_frame.stack_base); // Remove all args and local vars
                     self.stack.pop(); // Remove the called function
                     self.stack.push(return_value);
+                },
+
+                op::ITER_START => {
+                    let iter_idx = cursor.get_u16();
+                    let locked_param_count = cursor.get_u16() as usize;
+                    let type_flag = cursor.get_u8();
+                    let params_start = self.stack.len() - locked_param_count;
+                    let iterator = self.base_iterators.get(iter_idx as usize).unwrap();
+                    let closed_values = self.stack.drain(params_start..).collect();
+                    let base_pointer = self.stack.len();
+
+                    // Space for the locals to exist on the stack
+                    for _ in 0..iterator.num_locals {
+                        self.stack.push(self.false_ref.clone());
+                    }
+                    
+                    self.frames.push(Frame::new_as_iter(
+                        iterator.ins.clone(),
+                        cursor.position(),
+                        base_pointer,
+                        closed_values,
+                        type_flag == TUP_BASE,
+                    ));
+                    cursor = Cursor::new(iterator.ins.clone());
+                }
+
+                op::ITER_NEXT => {
+                    let iter_idx = cursor.get_u8() as usize;
+                    let jmp_ptr = cursor.get_u32() as u64;
+                    self.frame_mut().iter_next(iter_idx, || cursor.set_position(jmp_ptr));
+                },
+
+                op::ITER_COLLECT => {
+                    let item = self.stack.pop_one();
+                    self.frame_mut().iter_collect(item);
+                },
+
+                op::ITER_END => {
+                    let last_frame = self.frames.pop().unwrap();
+                    cursor = Cursor::new(self.frame().ins.clone());
+                    cursor.set_position(last_frame.return_ptr);
+                    self.stack.truncate(last_frame.stack_base); // Remove local vars
+                    self.stack.push(last_frame.collector());
+                },
+
+                op::MAKE_ITER => {
+                    let collection = self.stack.pop_one();
+                    self.frame_mut().make_iter(&collection);
+                }
+
+                op::DUP_ITER => todo!(),
+
+                op::GET_ITER_VAL => {
+                    let iter_idx = cursor.get_u8() as usize;
+                    self.stack.push(self.frame().get_iter_val(iter_idx));
+                },
+
+                op::GET_ITER_KEY => {
+                    let iter_idx = cursor.get_u8() as usize;
+                    self.stack.push(self.frame().get_iter_key(iter_idx));
                 },
 
                 op::PRINT => {
@@ -244,6 +322,10 @@ impl VM {
     }
 
     fn frame(&self) -> &Frame {
-        self.frames.last().unwrap_or_else(|| panic!("There are no frames!"))
+        self.frames.last().expect("There are no frames!")
+    }
+
+    fn frame_mut(&mut self) -> &mut Frame {
+        self.frames.last_mut().expect("There are no frames!")
     }
 }

@@ -1,13 +1,16 @@
 use super::bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
 use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 
-use crate::object::object::{BaseObject, Function};
+use crate::object::object::{BaseObject, Executor};
 use crate::op::{self, Op};
-use crate::parser::ast::{BinOp, Bound, Expr, ExprList, Former, Postfix, PreOp, Stmt, StmtList};
+use crate::parser::ast::{
+    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SingleIterator, Stmt, StmtList
+};
 use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct Compiler {
     constants: Vec<BaseObject>,
+    iterators: Vec<Executor>,
     scopes: ScopeStack,
 }
 
@@ -15,6 +18,7 @@ impl Compiler {
     pub fn new() -> Self {
         Compiler {
             constants: Vec::new(),
+            iterators: Vec::new(),
             scopes: ScopeStack::new(),
         }
     }
@@ -29,6 +33,7 @@ impl Compiler {
         Bytecode {
             instructions,
             constants: self.constants,
+            iterators: self.iterators,
             global_count,
         }
     }
@@ -69,7 +74,7 @@ impl Compiler {
     }
 
     // Should leave something on the stack, which may be used by conditional expressions
-    // Non-expression statements should leave a `null` on the stack
+    // and function bodies. Non-expression statements should leave a `null` on the stack.
     fn compile_stmt_like_expr(&mut self, node: Stmt) {
         match node {
             Stmt::Expr(expr) => self.compile_expr(expr),
@@ -117,6 +122,9 @@ impl Compiler {
                 for param in opt_params.into_iter() { self.scopes.register_sym(param); };
 
                 self.compile_expr(*eval);
+                // TODO: This return is only necessary for implicit-return functions
+                // Block-expression based functions will generate their own returns when implemented
+                // in the compiler
                 self.emit(op::RETURN);
 
                 let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
@@ -126,13 +134,15 @@ impl Compiler {
                     self.load_symbol_on_stack(sym);
                 }
 
-                let const_ptr = self.add_const(BaseObject::Closure(Function {
-                    ins,
-                    num_locals: symbol_count,
+                let const_ptr = self.add_const(BaseObject::Closure {
+                    function: Box::new(Executor {
+                        ins,
+                        num_locals: symbol_count,
+                        locked_values: Vec::new(),
+                    }),
                     num_req_params: req_count,
                     num_opt_params: opt_count,
-                    locked_values: Vec::new(),
-                }));
+                });
 
                 self.emit_with_u16_u16(op::MAKE_FN, const_ptr, locked_sym_count as u16);
             }
@@ -163,8 +173,8 @@ impl Compiler {
             } => {
                 self.compile_expr(*condition);
 
-                let jmp_nt_operand_ptr = self.ins_len() + 1;
-                self.emit_with_u32(op::JUMP_NOT_TRUE, u32::MAX);
+                let jmp_if_operand_ptr = self.ins_len() + 1;
+                self.emit_with_u32(op::JUMP_IF_FALSE, u32::MAX);
                 self.compile_stmt_like_expr(*consequence);
 
                 let jmp_operand_ptr = self.ins_len() + 1;
@@ -174,7 +184,7 @@ impl Compiler {
                 let jmp_destination = self.ins_len();
 
                 // Set correct jump locations
-                self.overwrite_u32(jmp_nt_operand_ptr, jnt_destination as u32);
+                self.overwrite_u32(jmp_if_operand_ptr, jnt_destination as u32);
                 self.overwrite_u32(jmp_operand_ptr, jmp_destination as u32)
             }
             _ => panic!("Unimplemented in compile_expr: {node:?}"),
@@ -213,10 +223,135 @@ impl Compiler {
                 self.emit_with_u8(op::MAKE_RN_COL, flag);
             }
             Former::Iterator {
-                output: _,
-                iterator: _,
-            } => unimplemented!(),
+                output,
+                iterator,
+            } => self.compile_iterator_former(*output, iterator, flag_base),
         }
+    }
+
+    fn compile_iterator_former(&mut self, eval: Expr, iterator: Iterator, flag_base: u8) {
+        self.scopes.enter_scope();
+        
+        /* Register local symbols, compile iterator collection expressions */
+
+        if iterator.iterators.len() > 255 {
+            panic!("Cannot support an iterator with more than 255 members")
+        };
+        let mut iter_vars: Vec<IterVar> = vec![];
+        // This line is kinda funny if you think about it, and also a nightmare
+        iterator.iterators.into_iter().for_each(|single_iter| {
+            match single_iter {
+                SingleIterator::In { bounds, expr } => {
+                    let bound_count: u8 = bounds.len().try_into().expect(
+                        "Cannot support an iterator with more than 255 bounds"
+                    );
+                    self.compile_value_iterator(bounds, expr);
+                    for _ in 0..bound_count {
+                        iter_vars.push(IterVar::Value);
+                    }
+                }
+                SingleIterator::Select { collection, key, value } => {
+                    self.compile_key_value_iterator(collection, key, value);
+                    iter_vars.push(IterVar::KeyAndValue);
+                }
+            }
+        });
+
+        /* Compile Iterator Start Section */
+
+        let iter_next_ins_ptr = self.ins_len() as u32;
+        let iter_var_count = iter_vars.len() as u32;
+        // The jump location for ITER_NEXT will be after all ITER_NEXT instructions (6 bytes each)
+        // and the single ITER_END (1 byte)
+        let iter_next_jump_location = iter_next_ins_ptr + (iter_var_count * 6) + 1;
+        // Iterators are processed in reverse
+        for (idx, _) in iter_vars.iter().enumerate().rev() {
+            self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iter_next_jump_location);
+        }
+        self.emit(op::ITER_END);
+
+        /* Load locals */
+
+        // Using this `sym_count` assumes that the symbols were registered in the correct order
+        let mut sym_count: u16 = 0;
+        for (idx, iter_var) in iter_vars.into_iter().enumerate() {
+            let idx = idx as u8;
+            match iter_var {
+                IterVar::KeyAndValue => {
+                    self.emit_with_u8(op::GET_ITER_VAL, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                    self.emit_with_u8(op::GET_ITER_KEY, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                }
+                IterVar::Value => {
+                    self.emit_with_u8(op::GET_ITER_VAL, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                }
+            }
+        }
+
+        /* Compile Conditional expression */
+
+        iterator.filter.map(|filter| {
+            self.compile_expr(*filter);
+            self.emit_with_u32(op::JUMP_IF_FALSE, iter_next_ins_ptr);
+        });
+
+        /* Compile Output expression */
+
+        self.compile_expr(eval);
+        self.emit(op::ITER_COLLECT);
+        self.emit_with_u32(op::JUMP, iter_next_ins_ptr);
+
+        /* Iterator compilation finished, immediately calling */
+
+        println!("Current symbol table");
+        println!("{:?}", self.scopes.peek_symbols());
+        
+        let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
+        
+        let locked_sym_count = locked_symbols.len() as u16;
+        for sym in locked_symbols {
+            self.load_symbol_on_stack(sym);
+        }
+
+        let global_iter_idx = self.iterators.len() as u16;
+        self.iterators.push(Executor {
+            ins,
+            num_locals: symbol_count,
+            locked_values: Vec::new(),
+        });
+
+        self.emit_with_u16_u16_u8(op::ITER_START, global_iter_idx, locked_sym_count, flag_base);
+    }
+
+    fn compile_value_iterator(&mut self, bounds: BoundList, collection: Expr) {
+        self.compile_expr(collection);
+        
+        for (idx, bound) in bounds.into_iter().enumerate() {
+            self.emit(if idx == 0 { op::MAKE_ITER } else { op::DUP_ITER });
+            self.register_bound(bound);
+        }
+    }
+
+    fn compile_key_value_iterator(&mut self, collection: String, key_bound: Bound, value_bound: Bound) {
+        let collection_sym = self.scopes.lookup_sym(&collection).expect(
+            "Key-Value iterator must be an initialized variable"
+        );
+        self.load_symbol_on_stack(collection_sym);
+        self.emit(op::MAKE_ITER);
+        self.register_bound(key_bound);
+        self.register_bound(value_bound);
+    }
+
+    fn register_bound(&mut self, bound: Bound) {
+        match bound {
+            Bound::Ident(id) => self.scopes.register_sym(id),
+            _ => unimplemented!(),
+        };
     }
 
     fn compile_postfix_call(&mut self, lhs: Expr, args: ExprList) {
@@ -256,10 +391,23 @@ impl Compiler {
         self.last_ins().put_u16(operand_2);
     }
 
+    fn emit_with_u8_u32(&mut self, code: Op, operand_1: u8, operand_2: u32) {
+        self.emit(code);
+        self.last_ins().put_u8(operand_1);
+        self.last_ins().put_u32(operand_2);
+    }
+
     fn emit_with_u16_u16(&mut self, code: Op, operand_1: u16, operand_2: u16) {
         self.emit(code);
         self.last_ins().put_u16(operand_1);
         self.last_ins().put_u16(operand_2);
+    }
+
+    fn emit_with_u16_u16_u8(&mut self, code: Op, operand_1: u16, operand_2: u16, operand_3: u8) {
+        self.emit(code);
+        self.last_ins().put_u16(operand_1);
+        self.last_ins().put_u16(operand_2);
+        self.last_ins().put_u8(operand_3);
     }
 
     fn emit_with_u16(&mut self, code: Op, operand: u16) {
@@ -280,11 +428,11 @@ impl Compiler {
         self.constants.push(base_object);
         (self.constants.len() - 1)
             .try_into()
-            .unwrap_or_else(|_| panic!("Too many constants were generated"))
+            .expect("Too many constants were generated")
     }
 
     fn ins_len(&self) -> usize {
-        self.scopes.size()
+        self.scopes.ins_len()
     }
 
     fn overwrite(&mut self, at: usize, data: Bytes) {
@@ -339,4 +487,10 @@ fn from_pre_op(pre_op: PreOp) -> Option<Op> {
         PreOp::Init => Some(op::INIT),
         PreOp::Identity => None, // No op needed for Identity
     }
+}
+
+#[derive(Debug)]
+enum IterVar {
+    Value,
+    KeyAndValue,
 }

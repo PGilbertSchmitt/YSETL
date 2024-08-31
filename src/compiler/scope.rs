@@ -17,7 +17,20 @@ pub struct Symbol {
 
 pub type SymbolRef = Rc<Symbol>;
 
-pub type SymbolRegistry = HashMap<String, SymbolRef>;
+#[derive(Debug)]
+pub struct SymbolRegistry {
+    table: HashMap<String, SymbolRef>,
+    stack_idx: usize,
+}
+
+impl SymbolRegistry {
+    pub fn new() -> Self {
+        Self {
+            table: HashMap::new(),
+            stack_idx: 0, // The index for non-locked variables
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Scope {
@@ -42,7 +55,7 @@ impl Scope {
             name: id.to_owned(),
         });
         self.locked.push(original);
-        self.symbols.insert(id, new_sym.clone());
+        self.symbols.table.insert(id, new_sym.clone());
         new_sym
     }
 }
@@ -59,9 +72,13 @@ impl ScopeStack {
         self.0.len()
     }
 
+    pub fn ins_len(&self) -> usize {
+        self.0.last().unwrap().instructions.len()
+    }
+
     /** Returns the number of symbols in the current scope */
     pub fn symbol_count(&self) -> usize {
-        self.last_symbols().len()
+        self.last_symbols().stack_idx
     }
 
     pub fn enter_scope(&mut self) {
@@ -74,7 +91,7 @@ impl ScopeStack {
             Scoping was not handled properly by compiler", self.size());
         } 
         let scope = self.0.pop().unwrap();
-        (scope.instructions.freeze(), scope.symbols.len(), scope.locked)
+        (scope.instructions.freeze(), scope.symbols.stack_idx, scope.locked)
     }
 
     pub fn final_scope(self) -> (Bytes, usize) {
@@ -83,7 +100,7 @@ impl ScopeStack {
             with {}. Scoping was not handled properly by compiler", self.size());
         }
         let scope = self.0.into_iter().next().unwrap();
-        (scope.instructions.freeze(), scope.symbols.len())
+        (scope.instructions.freeze(), scope.symbols.stack_idx)
     }
 
     pub fn register_sym(&mut self, id: String) -> SymbolRef {
@@ -93,22 +110,27 @@ impl ScopeStack {
         } else {
             ScopeKind::LOCAL
         };
-        self.last_symbols_mut()
+        let registry = self.last_symbols_mut();
+
+        registry.table
             .entry(id.to_owned())
-            .or_insert_with(|| Rc::new(Symbol { scope, index, name: id }))
+            .or_insert_with(|| {
+                registry.stack_idx += 1;
+                Rc::new(Symbol { scope, index, name: id })
+            })
             .clone()
     }
 
     pub fn lookup_sym(&mut self, id: &str) -> Option<SymbolRef> {
         let mut scopes = self.0.iter().enumerate().rev();
         let (_, cur_scope) = scopes.next().unwrap();
-        if let Some(sym) = cur_scope.symbols.get(id) {
+        if let Some(sym) = cur_scope.symbols.table.get(id) {
             // Variable is local to scope
             return Some(sym.clone());
         };
 
         let (idx, sym) = scopes.find_map(|(i, scope)| {
-            scope.symbols.get(id).map(|sym| (i+1, sym.clone()))
+            scope.symbols.table.get(id).map(|sym| (i+1, sym.clone()))
         })?;
 
         if sym.scope == ScopeKind::GLOBAL {
@@ -143,6 +165,14 @@ impl ScopeStack {
 
     pub fn last_ins_mut(&mut self) -> &mut BytesMut {
         &mut self.current_scope_mut().instructions
+    }
+
+    pub fn peek_ins(&self) -> Bytes {
+        self.0.last().unwrap().instructions.clone().freeze()
+    }
+
+    pub fn peek_symbols(&self) -> &SymbolRegistry {
+        &self.0.last().unwrap().symbols
     }
 }
 
