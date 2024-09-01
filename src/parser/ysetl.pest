@@ -94,19 +94,27 @@ dbl_qst  = { "??" }
 dbl_lt   = { "<<" }
 dbl_gt   = { ">>" }
 
+// Direct Operator symbols (prefix duplicates)
+// These are needed because the PRATT parser will freak out if
+// the same rule is used for 2 different entries. They can be
+// the same symbol, just not the same rule.
+dash_pre  = { "-" }
+caret_pre = { "^" }
+amp_pre   = { "&" }
+
 // Operator Groups
 
 nested_expr = { l_paren ~ expr ~ r_paren }
 
 prefix_op = _{
-  | dash
+  | dash_pre
+  | caret_pre
+  | amp_pre
   | plus
   | hash
   | bang
-  | caret
   | dollar
   | tilde
-  | amp
   | kw_not
 }
 

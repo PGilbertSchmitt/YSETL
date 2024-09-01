@@ -88,13 +88,13 @@ lazy_static::lazy_static! {
             // Reduce operator
             .op(Op::infix(Rule::dbl_qst, Right))
             .op(Op::infix(Rule::at, Right))
-            .op(Op::prefix(Rule::dash) |
+            .op(Op::prefix(Rule::dash_pre) |
                 Op::prefix(Rule::hash) |
                 Op::prefix(Rule::bang) |
-                Op::prefix(Rule::caret) |
+                Op::prefix(Rule::caret_pre) |
                 Op::prefix(Rule::dollar) |
                 Op::prefix(Rule::tilde) |
-                Op::prefix(Rule::amp))
+                Op::prefix(Rule::amp_pre))
             .op(Op::postfix(Rule::fn_call) |
                 Op::postfix(Rule::index_call) |
                 Op::postfix(Rule::slice_call) |
@@ -320,13 +320,13 @@ fn parse_iterator_former(pair: Pair<Rule>) -> FormerResult {
 fn parse_pre_op(op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
     let op = match op.as_rule() {
         Rule::kw_not | Rule::bang => PreOp::Not,
-        Rule::dash => PreOp::Negate,
+        Rule::dash_pre => PreOp::Negate,
         Rule::plus => PreOp::Identity,
         Rule::hash => PreOp::Size,
-        Rule::caret => PreOp::Head,
+        Rule::caret_pre => PreOp::Head,
         Rule::dollar => PreOp::Last,
         Rule::tilde => PreOp::Tail,
-        Rule::amp => PreOp::Init,
+        Rule::amp_pre => PreOp::Init,
         _ => unreachable!(),
     };
     Ok(Expr::Prefix {

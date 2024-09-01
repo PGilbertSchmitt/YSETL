@@ -36,7 +36,7 @@ pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
 fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
     match op {
         op::ADD => BaseObject::Int(left + right),
-        op::SUBSET => BaseObject::Int(left - right),
+        op::SUBTRACT => BaseObject::Int(left - right),
         op::MULT => BaseObject::Int(left * right),
         op::EXP => {
             if right < 0 {
@@ -71,7 +71,7 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
 fn execute_float_math(op: Op, left: f64, right: f64) -> BaseObject {
     match op {
         op::ADD => BaseObject::Float(left + right),
-        op::SUBSET => BaseObject::Float(left - right),
+        op::SUBTRACT => BaseObject::Float(left - right),
         op::MULT => BaseObject::Float(left * right),
         op::EXP => BaseObject::Float(left.powf(right)),
         op::DIV => {
