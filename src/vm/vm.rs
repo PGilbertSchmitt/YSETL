@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::Cursor;
 
 use super::binop::execute_binop;
@@ -107,9 +108,15 @@ impl VM {
                 }
 
                 op::MAKE_LIT_COL => {
-                    let _flag = cursor.get_u8();
-                    let _size = cursor.get_u16();
-                    todo!();
+                    let flag = cursor.get_u8();
+                    let size = cursor.get_u16() as usize;
+                    let stack_start_ptr = self.stack.len() - size;
+                    let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
+                    if flag & TUP_BASE == 0 {
+                        self.stack.push(BaseObject::Set(HashSet::from_iter(elements)).wrap())
+                    } else {
+                        self.stack.push(BaseObject::Tuple(elements).wrap());
+                    }
                 }
 
                 op::MAKE_RN_COL => {

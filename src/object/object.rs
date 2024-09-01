@@ -1,6 +1,8 @@
-use std::rc::Rc;
-
 use bytes::Bytes;
+use once_cell::unsync::OnceCell;
+use std::{
+    collections::HashSet, hash::{DefaultHasher, Hash, Hasher}, mem, rc::Rc
+};
 
 #[derive(Debug, Clone)]
 pub enum IterKind {
@@ -24,7 +26,7 @@ pub trait ObjectOps {
     fn to_debug_string(&self) -> String;
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub enum BaseObject {
     Null,
     True,
@@ -33,6 +35,7 @@ pub enum BaseObject {
     Float(f64),
     String(String),
     Tuple(Vec<Object>),
+    Set(HashSet<Object>),
     Closure {
         function: Box<Executor>,
         num_req_params: usize,
@@ -42,7 +45,10 @@ pub enum BaseObject {
 
 impl BaseObject {
     pub fn wrap(self) -> Object {
-        Object(Rc::new(self))
+        Object {
+            base: Rc::new(self),
+            seed: Rc::new(OnceCell::new()),
+        }
     }
 }
 
@@ -149,6 +155,13 @@ impl ObjectOps for BaseObject {
                     .collect::<Vec<String>>()
                     .join(",")
             ),
+            Self::Set(set) => format!(
+                "{{{}}}",
+                set.iter()
+                    .map(|o| o.to_s())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ),
             // This could change if we also stored the function's string
             // along with the compliled data, but this is good enough for now
             Self::Closure {
@@ -175,58 +188,169 @@ impl ObjectOps for BaseObject {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Object(Rc<BaseObject>);
+impl PartialEq for BaseObject {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (BaseObject::Null, BaseObject::Null) => true,
+            (BaseObject::True, BaseObject::True) => true,
+            (BaseObject::False, BaseObject::False) => true,
+            (BaseObject::Int(x), BaseObject::Int(y)) => x == y,
+            (BaseObject::String(x), BaseObject::String(y)) => x == y,
+            (BaseObject::Tuple(x), BaseObject::Tuple(y)) => x == y,
+            (
+                BaseObject::Closure {
+                    function,
+                    num_opt_params,
+                    num_req_params,
+                },
+                BaseObject::Closure {
+                    function: other_function,
+                    num_opt_params: other_num_opt_params,
+                    num_req_params: other_num_req_params,
+                },
+            ) => {
+                function == other_function
+                    && num_req_params == other_num_req_params
+                    && num_opt_params == other_num_opt_params
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for BaseObject {}
+
+impl Hash for BaseObject {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            BaseObject::Null => {}
+            BaseObject::True => true.hash(state),
+            BaseObject::False => false.hash(state),
+            BaseObject::Int(x) => x.hash(state),
+            BaseObject::Float(x) => {
+                unsafe {
+                    // All I need is that the bytes of the float make it into the hasher.
+                    // Floats do not implement Eq, so it doesn't really matter how accurate
+                    // this step is.
+                    mem::transmute::<f64, u64>(*x).hash(state);
+                    'f'.hash(state);
+                }
+            }
+            BaseObject::Tuple(v) => {
+                v.hash(state);
+            }
+            BaseObject::Set(s) => {
+                let mut element_hashes = s.iter().map(|o| o.get_seed()).collect::<Vec<u64>>();
+                element_hashes.sort();
+                element_hashes.iter().for_each(|el| el.hash(state));
+            }
+            BaseObject::Closure {
+                function,
+                num_req_params,
+                num_opt_params,
+            } => {
+                function.hash(state);
+                num_req_params.hash(state);
+                num_opt_params.hash(state);
+            }
+            _ => {}
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Object {
+    base: Rc<BaseObject>,
+    seed: Rc<OnceCell<u64>>,
+}
 
 impl Object {
     pub fn as_ref(&self) -> &BaseObject {
-        self.0.as_ref()
+        self.base.as_ref()
+    }
+
+    pub fn get_seed(&self) -> u64 {
+        *self.seed.get_or_try_init(|| {
+            let mut tmp_hasher = DefaultHasher::new();
+            self.base.hash(&mut tmp_hasher);
+            Ok(tmp_hasher.finish()) as Result<u64,()>
+        }).unwrap()
     }
 }
 
 impl ObjectOps for Object {
     fn is_null(&self) -> bool {
-        self.0.is_null()
+        self.base.is_null()
     }
 
     fn is_truthy(&self) -> bool {
-        self.0.is_truthy()
+        self.base.is_truthy()
     }
 
     fn truthy_convert(&self) -> Self {
-        self.0.truthy_convert().wrap()
+        self.base.truthy_convert().wrap()
     }
 
     fn not(&self) -> Self {
-        self.0.not().wrap()
+        self.base.not().wrap()
     }
 
     fn negate(&self) -> Self {
-        self.0.negate().wrap()
+        self.base.negate().wrap()
     }
 
     fn inner_int(&self) -> i64 {
-        self.0.inner_int()
+        self.base.inner_int()
     }
 
     fn inner_fn(&self) -> (Executor, usize, usize) {
-        self.0.inner_fn()
+        self.base.inner_fn()
     }
 
     fn to_vec(&self) -> Vec<Object> {
-        self.0.to_vec()
+        self.base.to_vec()
     }
 
     fn iter_kind(&self) -> IterKind {
-        self.0.iter_kind()
+        self.base.iter_kind()
     }
 
     fn to_s(&self) -> String {
-        self.0.to_s()
+        self.base.to_s()
     }
 
     fn to_debug_string(&self) -> String {
-        self.0.to_debug_string()
+        self.base.to_debug_string()
+    }
+}
+
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Some(self_hash), Some(other_hash)) = (
+            once_cell::unsync::OnceCell::<u64>::get(&self.seed),
+            once_cell::unsync::OnceCell::<u64>::get(&other.seed),
+        ) {
+            self_hash == other_hash
+        } else {
+            self.base == other.base
+        }
+    }
+}
+
+impl Eq for Object {}
+
+impl Hash for Object {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // I've made the decision that to facilitate caching my hashes, I must actually
+        // hash twice, once. The flow is:
+        // - If the "seed" value exists, we pass it to the hasher and we're done. It's only
+        // a single u64, so it's pretty cheap.
+        // - If the "seed" value doesn't exist yet, we generate it first using a separate
+        // hasher (which may be an expensive operation), saving the result of that hash as
+        // our seed going forward. Then, we can proceed with passing that to our hasher.
+        // `Object::get_seed()` will perform this initial hashing step once (hidden behind
+        // a OnceCell).
+        state.write_u64(self.get_seed());
     }
 }
 
@@ -234,7 +358,7 @@ impl ObjectOps for Object {
 // - Re-used for Iterators
 // - Will probably box this later to keep the BaseObject size small
 // - Custom `PartialEq` implementation (just in case)
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct Executor {
     pub ins: Bytes,
     pub num_locals: usize,
