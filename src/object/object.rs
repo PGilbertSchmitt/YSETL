@@ -1,8 +1,13 @@
 use bytes::Bytes;
 use once_cell::unsync::OnceCell;
 use std::{
-    collections::HashSet, hash::{DefaultHasher, Hash, Hasher}, mem, rc::Rc
+    collections::HashSet,
+    hash::{DefaultHasher, Hash, Hasher},
+    mem,
+    rc::Rc,
 };
+
+use crate::compiler::bytecode::{INCL_BIT, TUP_BASE};
 
 #[derive(Debug, Clone)]
 pub enum IterKind {
@@ -183,6 +188,20 @@ impl ObjectOps for BaseObject {
             Self::Int(x) => format!("i{x}"),
             Self::Float(x) => format!("f{x}"),
             Self::String(val) => format!("\"{val}\""),
+            Self::Tuple(vals) => format!(
+                "[{}]",
+                vals.iter()
+                    .map(|o| o.to_debug_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ),
+            Self::Set(set) => format!(
+                "{{{}}}",
+                set.iter()
+                    .map(|o| o.to_debug_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ),
             _ => self.to_s(),
         }
     }
@@ -230,7 +249,7 @@ impl Hash for BaseObject {
             BaseObject::Float(x) => {
                 unsafe {
                     // All I need is that the bytes of the float make it into the hasher.
-                    // Floats do not implement Eq, so it doesn't really matter how accurate
+                    // Floats cannot be Eq, so it doesn't really matter how accurate
                     // this step is.
                     mem::transmute::<f64, u64>(*x).hash(state);
                     'f'.hash(state);
@@ -240,6 +259,9 @@ impl Hash for BaseObject {
                 v.hash(state);
             }
             BaseObject::Set(s) => {
+                // This may be slower than XORing all element seeds together, but is much better for collisions
+                // Maybe I didn't need to worry about this so much, and this might really only help if there
+                // are a lot of sets being used in other sets or maps.
                 let mut element_hashes = s.iter().map(|o| o.get_seed()).collect::<Vec<u64>>();
                 element_hashes.sort();
                 element_hashes.iter().for_each(|el| el.hash(state));
@@ -270,11 +292,40 @@ impl Object {
     }
 
     pub fn get_seed(&self) -> u64 {
-        *self.seed.get_or_try_init(|| {
-            let mut tmp_hasher = DefaultHasher::new();
-            self.base.hash(&mut tmp_hasher);
-            Ok(tmp_hasher.finish()) as Result<u64,()>
-        }).unwrap()
+        *self
+            .seed
+            .get_or_try_init(|| {
+                let mut tmp_hasher = DefaultHasher::new();
+                self.base.hash(&mut tmp_hasher);
+                Ok(tmp_hasher.finish()) as Result<u64, ()>
+            })
+            .unwrap()
+    }
+
+    pub fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self {
+        let inclusive = flag & INCL_BIT != 0;
+        let elements: Vec<Object> = if range_start <= range_end {
+            // Normal range
+            let high = if inclusive { range_end + 1 } else { range_end };
+            (range_start..high)
+                .step_by(step.unwrap_or(1))
+                .map(|i| BaseObject::Int(i).wrap())
+                .collect()
+        } else {
+            // Range starts from reverse
+            let low = if inclusive { range_end } else { range_end + 1 };
+            (low..range_start + 1)
+                .rev()
+                .step_by(step.unwrap_or(1))
+                .map(|i| BaseObject::Int(i).wrap())
+                .collect()
+        };
+
+        if flag & TUP_BASE == 0 {
+            BaseObject::Set(HashSet::from_iter(elements)).wrap()
+        } else {
+            BaseObject::Tuple(elements).wrap()
+        }
     }
 }
 

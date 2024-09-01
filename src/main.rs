@@ -22,14 +22,9 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        foo = (A) => [x*y : x,y in A];
-        print foo([1..4])
+        print {5,10...50};
     ",
     );
-    // let ast = parse_program("
-    //     foo = (a) => {print a;  foo(a+1)};
-    //     print foo(1);
-    // ");
     let comp = Compiler::new();
     let bc = comp.compile_program(ast);
     println!("Results:");

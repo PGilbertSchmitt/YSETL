@@ -6,7 +6,7 @@ use super::frame::Frame;
 use super::preop::execute_pre_op;
 use bytes::Buf;
 
-use crate::compiler::bytecode::{Bytecode, TUP_BASE};
+use crate::compiler::bytecode::{Bytecode, STEP_BIT, TUP_BASE};
 use crate::object::object::{BaseObject, Executor, Object, ObjectOps};
 use crate::op;
 
@@ -112,8 +112,10 @@ impl VM {
                     let size = cursor.get_u16() as usize;
                     let stack_start_ptr = self.stack.len() - size;
                     let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
+
                     if flag & TUP_BASE == 0 {
-                        self.stack.push(BaseObject::Set(HashSet::from_iter(elements)).wrap())
+                        self.stack
+                            .push(BaseObject::Set(HashSet::from_iter(elements)).wrap())
                     } else {
                         self.stack.push(BaseObject::Tuple(elements).wrap());
                     }
@@ -123,16 +125,15 @@ impl VM {
                     let flag = cursor.get_u8();
                     let range_end = self.stack.pop_one().inner_int();
                     let range_start = self.stack.pop_one().inner_int();
-                    // TODO: This is incomplete. There are several interactions with inclusive/exclusive and
-                    // low->high/high->low ranges.
-                    let elements: Vec<Object> = (range_start..range_end)
-                        .map(|i| BaseObject::Int(i).wrap())
-                        .collect();
-                    if flag & TUP_BASE != 0 {
-                        self.stack.push(BaseObject::Tuple(elements).wrap());
+
+                    let step = if flag & STEP_BIT != 0 {
+                        let step = self.stack.pop_one().inner_int();
+                        Some(step as usize)
                     } else {
-                        todo!();
-                    }
+                        None
+                    };
+                    self.stack
+                        .push(Object::make_range(range_start, range_end, step, flag))
                 }
 
                 op::MAKE_FN => {
