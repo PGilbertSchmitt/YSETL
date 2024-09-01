@@ -4,8 +4,8 @@ use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 use crate::object::object::{BaseObject, Executor};
 use crate::op::{self, Op};
 use crate::parser::ast::{
-    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SingleIterator,
-    Stmt, StmtList,
+    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp,
+    SingleIterator, Stmt, StmtList,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -194,6 +194,7 @@ impl Compiler {
                 self.overwrite_u32(jump_if_operand_ptr, jnt_destination as u32);
                 self.overwrite_u32(jump_operand_ptr, jump_destination as u32)
             }
+            Expr::Select { op, iterator } => self.compile_select_iterator(op, iterator),
             _ => panic!("Unimplemented in compile_expr: {node:?}"),
         };
     }
@@ -235,18 +236,67 @@ impl Compiler {
         }
     }
 
-    fn compile_iterator_former(&mut self, eval: Expr, iterator: Iterator, flag_base: u8) {
+    fn compile_iterator_symbol_loader(&mut self, iter_vars: &Vec<IterVar>) -> usize {
+        let iteration_start_ptr = self.ins_len();
+
+        // Using this `sym_count` assumes that the symbols were registered in the correct order
+        let mut sym_count: u16 = 0;
+        for (idx, iter_var) in iter_vars.iter().enumerate() {
+            let idx = idx as u8;
+            match iter_var {
+                IterVar::KeyAndValue => {
+                    self.emit_with_u8(op::GET_ITER_VAL, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                    self.emit_with_u8(op::GET_ITER_KEY, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                }
+                IterVar::Value => {
+                    self.emit_with_u8(op::GET_ITER_VAL, idx);
+                    self.emit_with_u16(op::SET_LOCAL, sym_count);
+                    sym_count += 1;
+                }
+            }
+        }
+
+        iteration_start_ptr
+    }
+
+    fn compile_iterator_filter(&mut self, filter: Option<Box<Expr>>, jump_op: Op) -> Option<usize> {
+        filter.map(|filter| {
+            self.compile_expr(*filter);
+            let dest = self.ins_len() + 1;
+            self.emit_with_u32(jump_op, u32::MAX);
+            dest
+        })
+    }
+
+    fn compile_iterator_nexts(
+        &mut self,
+        iter_vars: &Vec<IterVar>,
+        iteration_start_ptr: u32,
+        empty_check_ptr: usize,
+    ) {
+        // Iterators are processed in reverse
+        for (idx, _) in iter_vars.iter().enumerate().rev() {
+            self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iteration_start_ptr);
+        }
+        self.overwrite_u32(empty_check_ptr, self.ins_len() as u32);
+    }
+
+    fn compile_iterator_start(
+        &mut self,
+        iterator: Iterator,
+    ) -> (Vec<IterVar>, Option<Box<Expr>>, usize, usize) {
         self.scopes.enter_scope();
-
-        /* Register local symbols, compile iterator collection expressions */
-
-        if iterator.iterators.len() > 255 {
+        let Iterator { iterators, filter } = iterator;
+        if iterators.len() > 255 {
             panic!("Cannot support an iterator with more than 255 members")
         };
         let mut iter_vars: Vec<IterVar> = vec![];
         // This line is kinda funny if you think about it, and also a nightmare
-        iterator
-            .iterators
+        iterators
             .into_iter()
             .for_each(|single_iter| match single_iter {
                 SingleIterator::In { bounds, expr } => {
@@ -274,65 +324,12 @@ impl Compiler {
         // opcodes are responsible for handling their own emptiness (aren't we all?)
         let empty_check_ptr = self.ins_len() + 1;
         self.emit_with_u32(op::ITER_EMPTY_CHECK, u32::MAX);
+        let iteration_start_ptr = self.compile_iterator_symbol_loader(&iter_vars);
 
-        /* Iterator loop starts here */
+        (iter_vars, filter, empty_check_ptr, iteration_start_ptr)
+    }
 
-        /* Load locals */
-
-        let iteration_start_ptr = self.ins_len() as u32;
-
-        // Using this `sym_count` assumes that the symbols were registered in the correct order
-        let mut sym_count: u16 = 0;
-        for (idx, iter_var) in iter_vars.iter().enumerate() {
-            let idx = idx as u8;
-            match iter_var {
-                IterVar::KeyAndValue => {
-                    self.emit_with_u8(op::GET_ITER_VAL, idx);
-                    self.emit_with_u16(op::SET_LOCAL, sym_count);
-                    sym_count += 1;
-                    self.emit_with_u8(op::GET_ITER_KEY, idx);
-                    self.emit_with_u16(op::SET_LOCAL, sym_count);
-                    sym_count += 1;
-                }
-                IterVar::Value => {
-                    self.emit_with_u8(op::GET_ITER_VAL, idx);
-                    self.emit_with_u16(op::SET_LOCAL, sym_count);
-                    sym_count += 1;
-                }
-            }
-        }
-
-        /* Compile Conditional expression */
-
-        let jump_ptr_dest = iterator.filter.map(|filter| {
-            self.compile_expr(*filter);
-            let dest = self.ins_len() + 1;
-            self.emit_with_u32(op::JUMP_IF_FALSE, u32::MAX);
-            dest
-        });
-
-        /* Compile Output expression */
-
-        self.compile_expr(eval);
-        self.emit(op::ITER_COLLECT);
-
-        /* Increment iterators or finish */
-
-        // Since we now know where the iterate incrementers start, we can update the
-        // pointer of the jump (if it exists)
-        if let Some(dest) = jump_ptr_dest {
-            self.overwrite_u32(dest, self.ins_len() as u32);
-        }
-
-        // Iterators are processed in reverse
-        for (idx, _) in iter_vars.iter().enumerate().rev() {
-            self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iteration_start_ptr);
-        }
-        self.overwrite_u32(empty_check_ptr, self.ins_len() as u32);
-        self.emit(op::ITER_END);
-
-        /* Iterator compilation finished, immediately calling */
-
+    fn compile_iterator_end(&mut self, flag_base: u8) {
         let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
 
         let locked_sym_count = locked_symbols.len() as u16;
@@ -350,6 +347,96 @@ impl Compiler {
         self.emit_with_u16_u16_u8(op::ITER_START, global_iter_idx, locked_sym_count, flag_base);
     }
 
+    fn compile_select_iterator(&mut self, select_op: SelectOp, iterator: Iterator) {
+        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr) =
+            self.compile_iterator_start(iterator);
+        let jump_ptr_dest = self.compile_iterator_filter(
+            filter,
+            if select_op == SelectOp::FORALL {
+                op::JUMP_IF_TRUE
+            } else {
+                op::JUMP_IF_FALSE
+            },
+        );
+
+        /* Early returns */
+        match select_op {
+            SelectOp::EXISTS => {
+                self.emit(op::TRUE);
+                self.emit(op::RETURN);
+            }
+            SelectOp::FORALL => {
+                self.emit(op::FALSE);
+                self.emit(op::RETURN);
+            }
+            SelectOp::CHOOSE => {
+                let sub_iter_count = iter_vars.len();
+
+                iter_vars
+                    .iter()
+                    .enumerate()
+                    .for_each(|(idx, iter_var)| match iter_var {
+                        IterVar::Value => {
+                            self.emit_with_u8(op::GET_ITER_VAL, idx as u8);
+                        }
+                        IterVar::KeyAndValue => {
+                            self.emit_with_u8(op::GET_ITER_KEY, idx as u8);
+                            self.emit_with_u8(op::GET_ITER_VAL, idx as u8);
+                            self.emit_with_u8_u16(op::MAKE_LIT_COL, TUP_BASE, 2);
+                        }
+                    });
+
+                if sub_iter_count > 1 {
+                    self.emit_with_u8_u16(op::MAKE_LIT_COL, TUP_BASE, sub_iter_count as u16);
+                }
+                self.emit(op::RETURN);
+            }
+        }
+
+        // Since we now know where the iterate incrementers start, we can update the
+        // pointer of the jump (if it exists)
+        if let Some(dest) = jump_ptr_dest {
+            self.overwrite_u32(dest as usize, self.ins_len() as u32);
+        }
+        self.compile_iterator_nexts(&iter_vars, iteration_start_ptr as u32, empty_check_ptr);
+
+        /* Iteration finished */
+        match select_op {
+            SelectOp::EXISTS => {
+                self.emit(op::FALSE);
+                self.emit(op::RETURN);
+            }
+            SelectOp::FORALL => {
+                self.emit(op::TRUE);
+                self.emit(op::RETURN);
+            }
+            SelectOp::CHOOSE => {
+                self.emit(op::NULL);
+                self.emit(op::RETURN);
+            }
+        }
+        self.compile_iterator_end(TUP_BASE);
+    }
+
+    fn compile_iterator_former(&mut self, eval: Expr, iterator: Iterator, flag_base: u8) {
+        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr) =
+            self.compile_iterator_start(iterator);
+        let jump_ptr_dest = self.compile_iterator_filter(filter, op::JUMP_IF_FALSE);
+
+        self.compile_expr(eval);
+        self.emit(op::ITER_COLLECT);
+
+        // Since we now know where the iterate incrementers start, we can update the
+        // pointer of the jump (if it exists)
+        if let Some(dest) = jump_ptr_dest {
+            self.overwrite_u32(dest as usize, self.ins_len() as u32);
+        }
+
+        self.compile_iterator_nexts(&iter_vars, iteration_start_ptr as u32, empty_check_ptr);
+        self.emit(op::ITER_END);
+        self.compile_iterator_end(flag_base);
+    }
+
     fn compile_value_iterator(&mut self, bounds: BoundList, collection: Expr) {
         self.compile_expr(collection);
 
@@ -359,7 +446,7 @@ impl Compiler {
             } else {
                 op::DUP_ITER
             });
-            self.register_bound(bound);
+            self.register_bound(bound.clone());
         }
     }
 

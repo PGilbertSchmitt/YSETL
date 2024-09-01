@@ -169,6 +169,13 @@ impl VM {
                     }
                 }
 
+                op::JUMP_IF_TRUE => {
+                    let jmp_pos = cursor.get_u32();
+                    if self.stack.pop_one().is_truthy() {
+                        cursor.set_position(jmp_pos as u64);
+                    }
+                }
+
                 op::JUMP_PEEK_AND => {
                     let jmp_pos = cursor.get_u32();
                     if !self.stack.last().unwrap().is_truthy() {

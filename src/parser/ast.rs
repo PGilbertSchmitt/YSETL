@@ -39,7 +39,7 @@ pub enum PreOp {
     Init,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Bound {
     Tilde,
     Ident(String),
@@ -86,7 +86,7 @@ pub enum Former {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SelectOp {
     EXISTS,
     CHOOSE,

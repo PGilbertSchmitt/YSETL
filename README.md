@@ -43,7 +43,7 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [ ] Tuple operations
 - [ ] Set operations
 - [ ] Map operations
-- [ ] Iteration
+- [x] Iteration
 
 ### Other
 - [ ] REPL
