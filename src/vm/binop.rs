@@ -1,29 +1,21 @@
-use crate::object::object::{BaseObject, Object, ObjectOps};
+use crate::object::object::{Object, ObjectOps};
 use crate::op::lookup;
 use crate::op::{self, Op};
 
-pub fn from_bool(val: bool) -> BaseObject {
+pub fn from_bool(val: bool) -> Object {
     if val {
-        BaseObject::True
+        Object::True
     } else {
-        BaseObject::False
+        Object::False
     }
 }
 
 pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
-    match (left.as_ref(), right.as_ref()) {
-        (&BaseObject::Int(left), &BaseObject::Int(right)) => {
-            execute_int_math(op, left, right).wrap()
-        }
-        (&BaseObject::Float(left), &BaseObject::Float(right)) => {
-            execute_float_math(op, left, right).wrap()
-        }
-        (&BaseObject::Int(left), &BaseObject::Float(right)) => {
-            execute_float_math(op, left as f64, right).wrap()
-        }
-        (&BaseObject::Float(left), &BaseObject::Int(right)) => {
-            execute_float_math(op, left, right as f64).wrap()
-        }
+    match (&left, &right) {
+        (&Object::Int(left), &Object::Int(right)) => execute_int_math(op, left, right),
+        (&Object::Float(left), &Object::Float(right)) => execute_float_math(op, left, right),
+        (&Object::Int(left), &Object::Float(right)) => execute_float_math(op, left as f64, right),
+        (&Object::Float(left), &Object::Int(right)) => execute_float_math(op, left, right as f64),
         _ => panic!(
             "Could not perform op {} on types {} and {}",
             lookup(op).0,
@@ -33,29 +25,29 @@ pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
     }
 }
 
-fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
+fn execute_int_math(op: Op, left: i64, right: i64) -> Object {
     match op {
-        op::ADD => BaseObject::Int(left + right),
-        op::SUBTRACT => BaseObject::Int(left - right),
-        op::MULT => BaseObject::Int(left * right),
+        op::ADD => Object::Int(left + right),
+        op::SUBTRACT => Object::Int(left - right),
+        op::MULT => Object::Int(left * right),
         op::EXP => {
             if right < 0 {
-                BaseObject::Float((left as f64).powf(right as f64))
+                Object::Float((left as f64).powf(right as f64))
             } else {
-                BaseObject::Int(left.pow(right as u32))
+                Object::Int(left.pow(right as u32))
             }
         }
         op::DIV => {
             if right == 0 {
                 panic!("Divide by zero error!");
             }
-            BaseObject::Int(left / right)
+            Object::Int(left / right)
         }
         op::MOD => {
             if right == 0 {
                 panic!("Mod by zero error!");
             }
-            BaseObject::Int(left % right)
+            Object::Int(left % right)
         }
         op::LT => from_bool(left < right),
         op::LTEQ => from_bool(left <= right),
@@ -68,23 +60,23 @@ fn execute_int_math(op: Op, left: i64, right: i64) -> BaseObject {
 }
 
 // duplicate to int math for most operations, can that be consolidated or no?
-fn execute_float_math(op: Op, left: f64, right: f64) -> BaseObject {
+fn execute_float_math(op: Op, left: f64, right: f64) -> Object {
     match op {
-        op::ADD => BaseObject::Float(left + right),
-        op::SUBTRACT => BaseObject::Float(left - right),
-        op::MULT => BaseObject::Float(left * right),
-        op::EXP => BaseObject::Float(left.powf(right)),
+        op::ADD => Object::Float(left + right),
+        op::SUBTRACT => Object::Float(left - right),
+        op::MULT => Object::Float(left * right),
+        op::EXP => Object::Float(left.powf(right)),
         op::DIV => {
             if right == 0.0 {
                 panic!("Divide by zero error!");
             }
-            BaseObject::Float(left / right)
+            Object::Float(left / right)
         }
         op::MOD => {
             if right == 0.0 {
                 panic!("Mod by zero error!");
             }
-            BaseObject::Float(left % right)
+            Object::Float(left % right)
         }
         op::LT => from_bool(left < right),
         op::LTEQ => from_bool(left <= right),

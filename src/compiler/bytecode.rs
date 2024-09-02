@@ -2,12 +2,12 @@ use std::io::Cursor;
 
 use bytes::{Buf, Bytes};
 
-use crate::object::object::{BaseObject, Executor};
+use crate::object::object::{Executor, Object};
 use crate::op::lookup;
 
 pub struct Bytecode {
     pub instructions: Bytes,
-    pub constants: Vec<BaseObject>,
+    pub constants: Vec<Object>,
     pub iterators: Vec<Executor>,
     pub global_count: usize,
 }

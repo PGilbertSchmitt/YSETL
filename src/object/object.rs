@@ -27,39 +27,98 @@ pub trait ObjectOps {
     fn to_vec(&self) -> Vec<Object>;
     fn iter_kind(&self) -> IterKind;
 
+    fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self;
+
     fn to_s(&self) -> String;
     fn to_debug_string(&self) -> String;
 }
 
-#[derive(Debug)]
-pub enum BaseObject {
+#[derive(Debug, Clone)]
+pub enum Object {
     Null,
     True,
     False,
     Int(i64),
     Float(f64),
-    String(String),
-    Tuple(Vec<Object>),
-    Set(HashSet<Object>),
+    String {
+        value: String,
+        seed: Rc<OnceCell<u64>>,
+    },
+    Tuple {
+        elements: Rc<Vec<Object>>,
+        seed: Rc<OnceCell<u64>>,
+    },
+    Set {
+        elements: Rc<HashSet<Object>>,
+        seed: Rc<OnceCell<u64>>,
+    },
     Closure {
-        function: Box<Executor>,
-        num_req_params: usize,
-        num_opt_params: usize,
+        inner: Rc<Closure>,
+        seed: Rc<OnceCell<u64>>,
     },
 }
 
-impl BaseObject {
-    pub fn wrap(self) -> Object {
-        Object {
-            base: Rc::new(self),
+impl Object {
+    pub fn new_string(s: String) -> Self {
+        Self::String {
+            value: s,
             seed: Rc::new(OnceCell::new()),
         }
     }
+
+    pub fn new_tuple(elements: Vec<Object>) -> Self {
+        Self::Tuple {
+            elements: Rc::new(elements),
+            seed: Rc::new(OnceCell::new()),
+        }
+    }
+
+    pub fn new_set(elements: Vec<Object>) -> Self {
+        Self::Set {
+            elements: Rc::new(HashSet::from_iter(elements)),
+            seed: Rc::new(OnceCell::new()),
+        }
+    }
+
+    pub fn new_closure(executor: Executor, num_req_params: usize, num_opt_params: usize) -> Self {
+        Self::Closure {
+            inner: Rc::new(Closure {
+                executor,
+                num_req_params,
+                num_opt_params,
+            }),
+            seed: Rc::new(OnceCell::new()),
+            // function: Box::new(function),
+        }
+    }
+
+    pub fn get_seed(&self) -> Option<&Rc<OnceCell<u64>>> {
+        match self {
+            Object::String { seed, .. } => Some(seed),
+            Object::Tuple { seed, .. } => Some(seed),
+            Object::Set { seed, .. } => Some(seed),
+            Object::Closure { seed, .. } => Some(seed),
+            _ => None,
+        }
+    }
+
+    fn try_seed<F>(seed: &Rc<OnceCell<u64>>, generate_child_hash: F) -> u64
+    where
+        F: Fn(&mut DefaultHasher),
+    {
+        *seed
+            .get_or_try_init(|| {
+                let mut tmp_hasher = DefaultHasher::new();
+                generate_child_hash(&mut tmp_hasher);
+                Ok(tmp_hasher.finish()) as Result<u64, ()>
+            })
+            .unwrap()
+    }
 }
 
-impl ObjectOps for BaseObject {
+impl ObjectOps for Object {
     fn is_null(&self) -> bool {
-        *self == BaseObject::Null
+        *self == Object::Null
     }
 
     fn is_truthy(&self) -> bool {
@@ -87,8 +146,8 @@ impl ObjectOps for BaseObject {
 
     fn negate(&self) -> Self {
         match self {
-            BaseObject::Int(x) => BaseObject::Int(-x),
-            BaseObject::Float(x) => BaseObject::Float(-x),
+            Object::Int(x) => Object::Int(-x),
+            Object::Float(x) => Object::Float(-x),
             _ => {
                 panic!("Cannot negate non-boolean value {}", self.to_debug_string())
             }
@@ -97,7 +156,7 @@ impl ObjectOps for BaseObject {
 
     fn inner_int(&self) -> i64 {
         match &self {
-            &BaseObject::Int(x) => *x,
+            &Object::Int(x) => *x,
             _ => {
                 panic!(
                     "Cannot convert value into integer: {}",
@@ -109,29 +168,28 @@ impl ObjectOps for BaseObject {
 
     fn inner_fn(&self) -> (Executor, usize, usize) {
         match &self {
-            &BaseObject::Closure {
-                function,
-                num_req_params,
-                num_opt_params,
-            } => (
-                Executor {
-                    ins: function.ins.clone(),
-                    num_locals: function.num_locals,
-                    locked_values: function.locked_values.clone(),
-                },
-                *num_req_params,
-                *num_opt_params,
-            ),
+            &Object::Closure { inner, .. } => {
+                let exec = &inner.executor;
+                (
+                    Executor {
+                        ins: exec.ins.clone(),
+                        num_locals: exec.num_locals,
+                        locked_values: exec.locked_values.clone(),
+                    },
+                    inner.num_req_params,
+                    inner.num_opt_params,
+                )
+            }
             _ => panic!("Could not convert {self:?} into a function"),
         }
     }
 
     fn to_vec(&self) -> Vec<Object> {
         match &self {
-            &BaseObject::Tuple(vec) => vec.clone(),
-            &BaseObject::String(str) => str
+            &Object::Tuple { elements, .. } => elements.to_vec(),
+            &Object::String { value, .. } => value
                 .split("")
-                .map(|str| BaseObject::String(str.to_owned()).wrap())
+                .map(|str| Object::new_string(str.to_owned()))
                 .collect(),
             _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
         }
@@ -139,9 +197,35 @@ impl ObjectOps for BaseObject {
 
     fn iter_kind(&self) -> IterKind {
         match &self {
-            &BaseObject::Tuple(_) => IterKind::Tuple,
-            &BaseObject::String(_) => IterKind::String,
+            &Object::Tuple { .. } => IterKind::Tuple,
+            &Object::String { .. } => IterKind::String,
             _ => unimplemented!(),
+        }
+    }
+
+    fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self {
+        let inclusive = flag & INCL_BIT != 0;
+        let elements: Vec<Object> = if range_start <= range_end {
+            // Normal range
+            let high = if inclusive { range_end + 1 } else { range_end };
+            (range_start..high)
+                .step_by(step.unwrap_or(1))
+                .map(|i| Object::Int(i))
+                .collect()
+        } else {
+            // Range starts from reverse
+            let low = if inclusive { range_end } else { range_end + 1 };
+            (low..range_start + 1)
+                .rev()
+                .step_by(step.unwrap_or(1))
+                .map(|i| Object::Int(i))
+                .collect()
+        };
+
+        if flag & TUP_BASE == 0 {
+            Object::new_set(elements)
+        } else {
+            Object::new_tuple(elements)
         }
     }
 
@@ -152,33 +236,31 @@ impl ObjectOps for BaseObject {
             Self::True => String::from("true"),
             Self::Int(x) => x.to_string(),
             Self::Float(x) => x.to_string(),
-            Self::String(val) => val.clone(),
-            Self::Tuple(vals) => format!(
+            Self::String { value, .. } => value.clone(),
+            Self::Tuple { elements, .. } => format!(
                 "[{}]",
-                vals.iter()
+                elements
+                    .iter()
                     .map(|o| o.to_s())
                     .collect::<Vec<String>>()
                     .join(",")
             ),
-            Self::Set(set) => format!(
+            Self::Set { elements, .. } => format!(
                 "{{{}}}",
-                set.iter()
+                elements
+                    .iter()
                     .map(|o| o.to_s())
                     .collect::<Vec<String>>()
                     .join(",")
             ),
             // This could change if we also stored the function's string
             // along with the compliled data, but this is good enough for now
-            Self::Closure {
-                function,
-                num_req_params,
-                num_opt_params,
-            } => format!(
+            Self::Closure { inner, .. } => format!(
                 "fn({}, {}?) => [{} locals, {} bytes]",
-                num_req_params,
-                num_opt_params,
-                function.num_locals,
-                function.ins.len(),
+                inner.num_req_params,
+                inner.num_opt_params,
+                inner.executor.num_locals,
+                inner.executor.ins.len(),
             ),
         }
     }
@@ -187,17 +269,19 @@ impl ObjectOps for BaseObject {
         match self {
             Self::Int(x) => format!("i{x}"),
             Self::Float(x) => format!("f{x}"),
-            Self::String(val) => format!("\"{val}\""),
-            Self::Tuple(vals) => format!(
+            Self::String { value, .. } => format!("\"{value}\""),
+            Self::Tuple { elements, .. } => format!(
                 "[{}]",
-                vals.iter()
+                elements
+                    .iter()
                     .map(|o| o.to_debug_string())
                     .collect::<Vec<String>>()
                     .join(",")
             ),
-            Self::Set(set) => format!(
+            Self::Set { elements, .. } => format!(
                 "{{{}}}",
-                set.iter()
+                elements
+                    .iter()
                     .map(|o| o.to_debug_string())
                     .collect::<Vec<String>>()
                     .join(",")
@@ -207,183 +291,46 @@ impl ObjectOps for BaseObject {
     }
 }
 
-impl PartialEq for BaseObject {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (BaseObject::Null, BaseObject::Null) => true,
-            (BaseObject::True, BaseObject::True) => true,
-            (BaseObject::False, BaseObject::False) => true,
-            (BaseObject::Int(x), BaseObject::Int(y)) => x == y,
-            (BaseObject::String(x), BaseObject::String(y)) => x == y,
-            (BaseObject::Tuple(x), BaseObject::Tuple(y)) => x == y,
-            (
-                BaseObject::Closure {
-                    function,
-                    num_opt_params,
-                    num_req_params,
-                },
-                BaseObject::Closure {
-                    function: other_function,
-                    num_opt_params: other_num_opt_params,
-                    num_req_params: other_num_req_params,
-                },
-            ) => {
-                function == other_function
-                    && num_req_params == other_num_req_params
-                    && num_opt_params == other_num_opt_params
-            }
-            _ => false,
-        }
-    }
-}
-
-impl Eq for BaseObject {}
-
-impl Hash for BaseObject {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            BaseObject::Null => {}
-            BaseObject::True => true.hash(state),
-            BaseObject::False => false.hash(state),
-            BaseObject::Int(x) => x.hash(state),
-            BaseObject::Float(x) => {
-                unsafe {
-                    // All I need is that the bytes of the float make it into the hasher.
-                    // Floats cannot be Eq, so it doesn't really matter how accurate
-                    // this step is.
-                    mem::transmute::<f64, u64>(*x).hash(state);
-                    'f'.hash(state);
-                }
-            }
-            BaseObject::Tuple(v) => {
-                v.hash(state);
-            }
-            BaseObject::Set(s) => {
-                // This may be slower than XORing all element seeds together, but is much better for collisions
-                // Maybe I didn't need to worry about this so much, and this might really only help if there
-                // are a lot of sets being used in other sets or maps.
-                let mut element_hashes = s.iter().map(|o| o.get_seed()).collect::<Vec<u64>>();
-                element_hashes.sort();
-                element_hashes.iter().for_each(|el| el.hash(state));
-            }
-            BaseObject::Closure {
-                function,
-                num_req_params,
-                num_opt_params,
-            } => {
-                function.hash(state);
-                num_req_params.hash(state);
-                num_opt_params.hash(state);
-            }
-            _ => {}
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Object {
-    base: Rc<BaseObject>,
-    seed: Rc<OnceCell<u64>>,
-}
-
-impl Object {
-    pub fn as_ref(&self) -> &BaseObject {
-        self.base.as_ref()
-    }
-
-    pub fn get_seed(&self) -> u64 {
-        *self
-            .seed
-            .get_or_try_init(|| {
-                let mut tmp_hasher = DefaultHasher::new();
-                self.base.hash(&mut tmp_hasher);
-                Ok(tmp_hasher.finish()) as Result<u64, ()>
-            })
-            .unwrap()
-    }
-
-    pub fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self {
-        let inclusive = flag & INCL_BIT != 0;
-        let elements: Vec<Object> = if range_start <= range_end {
-            // Normal range
-            let high = if inclusive { range_end + 1 } else { range_end };
-            (range_start..high)
-                .step_by(step.unwrap_or(1))
-                .map(|i| BaseObject::Int(i).wrap())
-                .collect()
-        } else {
-            // Range starts from reverse
-            let low = if inclusive { range_end } else { range_end + 1 };
-            (low..range_start + 1)
-                .rev()
-                .step_by(step.unwrap_or(1))
-                .map(|i| BaseObject::Int(i).wrap())
-                .collect()
-        };
-
-        if flag & TUP_BASE == 0 {
-            BaseObject::Set(HashSet::from_iter(elements)).wrap()
-        } else {
-            BaseObject::Tuple(elements).wrap()
-        }
-    }
-}
-
-impl ObjectOps for Object {
-    fn is_null(&self) -> bool {
-        self.base.is_null()
-    }
-
-    fn is_truthy(&self) -> bool {
-        self.base.is_truthy()
-    }
-
-    fn truthy_convert(&self) -> Self {
-        self.base.truthy_convert().wrap()
-    }
-
-    fn not(&self) -> Self {
-        self.base.not().wrap()
-    }
-
-    fn negate(&self) -> Self {
-        self.base.negate().wrap()
-    }
-
-    fn inner_int(&self) -> i64 {
-        self.base.inner_int()
-    }
-
-    fn inner_fn(&self) -> (Executor, usize, usize) {
-        self.base.inner_fn()
-    }
-
-    fn to_vec(&self) -> Vec<Object> {
-        self.base.to_vec()
-    }
-
-    fn iter_kind(&self) -> IterKind {
-        self.base.iter_kind()
-    }
-
-    fn to_s(&self) -> String {
-        self.base.to_s()
-    }
-
-    fn to_debug_string(&self) -> String {
-        self.base.to_debug_string()
-    }
-}
-
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
-        if let (Some(self_hash), Some(other_hash)) = (
-            once_cell::unsync::OnceCell::<u64>::get(&self.seed),
-            once_cell::unsync::OnceCell::<u64>::get(&other.seed),
-        ) {
-            self_hash == other_hash
-        } else {
-            self.base == other.base
+        match (self, other) {
+            (Object::Null, Object::Null) => true,
+            (Object::True, Object::True) => true,
+            (Object::False, Object::False) => true,
+            (Object::Int(x), Object::Int(y)) => x == y,
+            (Object::String { value, .. }, Object::String { value: other, .. }) => value == other,
+            (
+                Object::Tuple { elements, seed },
+                Object::Tuple {
+                    elements: other_elements,
+                    seed: other_seed,
+                    ..
+                },
+            ) => same_seed(seed, other_seed)
+                .map_or_else(|| elements == other_elements, |is_same_seed| is_same_seed),
+            (
+                Object::Set { elements, seed },
+                Object::Set {
+                    elements: other_elements,
+                    seed: other_seed,
+                },
+            ) => same_seed(seed, other_seed)
+                .map_or_else(|| elements == other_elements, |is_same_seed| is_same_seed),
+            (
+                Object::Closure { inner, seed },
+                Object::Closure {
+                    inner: other_inner,
+                    seed: other_seed,
+                },
+            ) => same_seed(seed, other_seed).map_or_else(
+                || {
+                    inner.executor == other_inner.executor
+                        && inner.num_req_params == other_inner.num_req_params
+                        && inner.num_opt_params == other_inner.num_opt_params
+                },
+                |is_same_seed| is_same_seed,
+            ),
+            _ => false,
         }
     }
 }
@@ -392,16 +339,53 @@ impl Eq for Object {}
 
 impl Hash for Object {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        // I've made the decision that to facilitate caching my hashes, I must actually
-        // hash twice, once. The flow is:
-        // - If the "seed" value exists, we pass it to the hasher and we're done. It's only
-        // a single u64, so it's pretty cheap.
-        // - If the "seed" value doesn't exist yet, we generate it first using a separate
-        // hasher (which may be an expensive operation), saving the result of that hash as
-        // our seed going forward. Then, we can proceed with passing that to our hasher.
-        // `Object::get_seed()` will perform this initial hashing step once (hidden behind
-        // a OnceCell).
-        state.write_u64(self.get_seed());
+        match self {
+            Object::Null => {}
+            Object::True => true.hash(state),
+            Object::False => false.hash(state),
+            Object::Int(x) => x.hash(state),
+            Object::Float(x) => {
+                unsafe {
+                    // All I need is that the bytes of the float make it into the hasher.
+                    // Floats cannot be Eq, so it doesn't really matter how accurate
+                    // this step is.
+                    'f'.hash(state);
+                    mem::transmute::<f64, u64>(*x).hash(state);
+                }
+            }
+            Object::Tuple { elements, seed } => {
+                let seed = Object::try_seed(seed, |h| elements.hash(h));
+                seed.hash(state);
+            }
+            Object::Set { elements, seed } => {
+                // This may be slower than XORing all element seeds together, but is much better for collisions
+                // Maybe I didn't need to worry about this so much, and this might really only help if there
+                // are a lot of sets being used in other sets or maps.
+                let seed = Object::try_seed(seed, |h| {
+                    let mut element_subhashes = elements
+                        .iter()
+                        .map(|o| {
+                            // This makes three sets of nested hashing, but 2 of those layers only need to be
+                            // calculated once.
+                            // I'm probably too dumb in Rust to figure out a better way to do this right now.
+                            let mut sub_seed_hasher: DefaultHasher = DefaultHasher::new();
+                            o.hash(&mut sub_seed_hasher);
+                            sub_seed_hasher.finish()
+                        })
+                        .collect::<Vec<u64>>();
+                    element_subhashes.sort();
+                    element_subhashes.iter().for_each(|el| el.hash(h));
+                });
+                seed.hash(state);
+            }
+            Object::Closure { inner, seed } => {
+                let seed = Object::try_seed(seed, |h| {
+                    inner.hash(h);
+                });
+                seed.hash(state);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -413,7 +397,7 @@ impl Hash for Object {
 pub struct Executor {
     pub ins: Bytes,
     pub num_locals: usize,
-    pub locked_values: Vec<Object>,
+    pub locked_values: Rc<Vec<Object>>,
 }
 
 // TODO: Currently, equality between 2 functions checks that the instructions match
@@ -424,5 +408,23 @@ pub struct Executor {
 impl PartialEq for Executor {
     fn eq(&self, other: &Self) -> bool {
         &self.ins == &other.ins && self.num_locals == self.num_locals
+    }
+}
+
+#[derive(Debug, Hash)]
+pub struct Closure {
+    pub executor: Executor,
+    num_req_params: usize,
+    num_opt_params: usize,
+}
+
+fn same_seed(seed1: &Rc<OnceCell<u64>>, seed2: &Rc<OnceCell<u64>>) -> Option<bool> {
+    if let (Some(self_hash), Some(other_hash)) = (
+        once_cell::unsync::OnceCell::<u64>::get(seed1),
+        once_cell::unsync::OnceCell::<u64>::get(seed2),
+    ) {
+        Some(self_hash == other_hash)
+    } else {
+        None
     }
 }

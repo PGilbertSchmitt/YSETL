@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use super::bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
 use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 
-use crate::object::object::{BaseObject, Executor};
+use crate::object::object::{Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
     BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp,
@@ -10,7 +12,7 @@ use crate::parser::ast::{
 use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct Compiler {
-    constants: Vec<BaseObject>,
+    constants: Vec<Object>,
     iterators: Vec<Executor>,
     scopes: ScopeStack,
 }
@@ -94,15 +96,15 @@ impl Compiler {
             Expr::True => self.emit(op::TRUE),
             Expr::False => self.emit(op::FALSE),
             Expr::Integer(value) => {
-                let const_ptr = self.add_const(BaseObject::Int(value));
+                let const_ptr = self.add_const(Object::Int(value));
                 self.emit_with_u16(op::CONST, const_ptr);
             }
             Expr::Float(value) => {
-                let const_ptr = self.add_const(BaseObject::Float(value));
+                let const_ptr = self.add_const(Object::Float(value));
                 self.emit_with_u16(op::CONST, const_ptr);
             }
             Expr::String(value) => {
-                let const_ptr = self.add_const(BaseObject::String(value));
+                let const_ptr = self.add_const(Object::new_string(value));
                 self.emit_with_u16(op::CONST, const_ptr);
             }
             Expr::Tuple(former) => self.compile_former(former, TUP_BASE),
@@ -143,15 +145,15 @@ impl Compiler {
                     self.load_symbol_on_stack(sym);
                 }
 
-                let const_ptr = self.add_const(BaseObject::Closure {
-                    function: Box::new(Executor {
+                let const_ptr = self.add_const(Object::new_closure(
+                    Executor {
                         ins,
                         num_locals: symbol_count,
-                        locked_values: Vec::new(),
-                    }),
-                    num_req_params: req_count,
-                    num_opt_params: opt_count,
-                });
+                        locked_values: Rc::new(Vec::new()),
+                    },
+                    req_count,
+                    opt_count,
+                ));
 
                 self.emit_with_u16_u16(op::MAKE_FN, const_ptr, locked_sym_count as u16);
             }
@@ -341,7 +343,7 @@ impl Compiler {
         self.iterators.push(Executor {
             ins,
             num_locals: symbol_count,
-            locked_values: Vec::new(),
+            locked_values: Rc::new(Vec::new()),
         });
 
         self.emit_with_u16_u16_u8(op::ITER_START, global_iter_idx, locked_sym_count, flag_base);
@@ -545,7 +547,7 @@ impl Compiler {
     //     self.instructions.put(bytes);
     // }
 
-    fn add_const(&mut self, base_object: BaseObject) -> u16 {
+    fn add_const(&mut self, base_object: Object) -> u16 {
         self.constants.push(base_object);
         (self.constants.len() - 1)
             .try_into()

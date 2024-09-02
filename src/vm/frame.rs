@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, rc::Rc};
 
 use bytes::Bytes;
 
-use crate::object::object::{BaseObject, IterKind, Object, ObjectOps};
+use crate::object::object::{IterKind, Object, ObjectOps};
 
 #[derive(Debug, Clone)]
 struct IterCollection {
@@ -81,7 +81,7 @@ pub struct Frame {
     pub ins: Bytes,
     pub return_ptr: usize,
     pub stack_base: usize,
-    pub closed_values: Vec<Object>,
+    pub closed_values: Rc<Vec<Object>>,
     iterator: Option<YsetlIter>,
 }
 
@@ -90,7 +90,7 @@ impl Frame {
         ins: Bytes,
         return_ptr: usize,
         stack_base: usize,
-        closed_values: Vec<Object>,
+        closed_values: Rc<Vec<Object>>,
     ) -> Self {
         Self {
             ins,
@@ -105,7 +105,7 @@ impl Frame {
         ins: Bytes,
         return_ptr: usize,
         stack_base: usize,
-        closed_values: Vec<Object>,
+        closed_values: Rc<Vec<Object>>,
         as_tuple: bool,
     ) -> Self {
         Self {
@@ -162,7 +162,7 @@ impl Frame {
         let current_iter = self.iterator_at(iter_idx);
         match current_iter.kind {
             IterKind::Tuple | IterKind::String => current_iter.current_value(),
-            IterKind::Set => BaseObject::Int(current_iter.pos as i64).wrap(),
+            IterKind::Set => Object::Int(current_iter.pos as i64),
         }
     }
 
@@ -179,7 +179,7 @@ impl Frame {
 
     pub fn collector(self) -> Object {
         match self.iterator.unwrap().output {
-            Collector::Tuple(v) => BaseObject::Tuple(v).wrap(),
+            Collector::Tuple(v) => Object::new_tuple(v),
             _ => todo!(),
         }
     }

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::rc::Rc;
 
 use super::binop::execute_binop;
 use super::frame::Frame;
@@ -6,7 +6,7 @@ use super::preop::execute_pre_op;
 use bytes::Bytes;
 
 use crate::compiler::bytecode::{Bytecode, STEP_BIT, TUP_BASE};
-use crate::object::object::{BaseObject, Executor, Object, ObjectOps};
+use crate::object::object::{Executor, Object, ObjectOps};
 use crate::op;
 
 const MAX_STACK_SIZE: usize = 4096;
@@ -35,13 +35,13 @@ pub struct VM {
 
 impl VM {
     pub fn new(bc: Bytecode) -> Self {
-        let null_ref = BaseObject::Null.wrap();
-        let true_ref = BaseObject::True.wrap();
-        let false_ref = BaseObject::False.wrap();
+        let null_ref = Object::Null;
+        let true_ref = Object::True;
+        let false_ref = Object::False;
 
         VM {
-            frames: vec![Frame::new_as_func(bc.instructions, 0, 0, vec![])],
-            constants: bc.constants.into_iter().map(BaseObject::wrap).collect(),
+            frames: vec![Frame::new_as_func(bc.instructions, 0, 0, Rc::new(vec![]))],
+            constants: bc.constants,
             base_iterators: bc.iterators,
             stack: Vec::with_capacity(MAX_STACK_SIZE),
             // Insertions can happen in any order, and uninitialized globals are hoisted, so
@@ -106,26 +106,22 @@ impl VM {
                 op::GET_LOCKED => {
                     let closed_value_idx = Self::read_u16(&ins, i_ptr) as usize;
                     i_ptr += 2;
-                    self.stack.push(
-                        self.frame()
-                            .closed_values[closed_value_idx]
-                            .clone(),
-                    );
+                    self.stack
+                        .push(self.frame().closed_values[closed_value_idx].clone());
                 }
 
                 op::MAKE_LIT_COL => {
                     let flag = ins[i_ptr];
-                    let size = Self::read_u16(&ins, i_ptr+1) as usize;
+                    let size = Self::read_u16(&ins, i_ptr + 1) as usize;
                     i_ptr += 3;
                     let stack_start_ptr = self.stack.len() - size;
                     let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
 
-                    if flag & TUP_BASE == 0 {
-                        self.stack
-                            .push(BaseObject::Set(HashSet::from_iter(elements)).wrap())
+                    self.stack.push(if flag & TUP_BASE == 0 {
+                        Object::new_set(elements)
                     } else {
-                        self.stack.push(BaseObject::Tuple(elements).wrap());
-                    }
+                        Object::new_tuple(elements)
+                    })
                 }
 
                 op::MAKE_RN_COL => {
@@ -146,20 +142,17 @@ impl VM {
 
                 op::MAKE_FN => {
                     let const_ptr = Self::read_u16(&ins, i_ptr) as usize;
-                    let locked_param_count = Self::read_u16(&ins, i_ptr+2) as usize;
+                    let locked_param_count = Self::read_u16(&ins, i_ptr + 2) as usize;
                     i_ptr += 4;
                     let function = self.constants[const_ptr as usize].clone();
                     let params_start = self.stack.len() - locked_param_count;
                     let (mut function, num_req_params, num_opt_params) = function.inner_fn();
-                    function.locked_values = self.stack.drain(params_start..).collect();
-                    self.stack.push(
-                        BaseObject::Closure {
-                            function: Box::new(function),
-                            num_req_params,
-                            num_opt_params,
-                        }
-                        .wrap(),
-                    );
+                    function.locked_values = Rc::new(self.stack.drain(params_start..).collect());
+                    self.stack.push(Object::new_closure(
+                        function,
+                        num_req_params,
+                        num_opt_params,
+                    ));
                 }
 
                 op::POP => {
@@ -262,12 +255,12 @@ impl VM {
 
                 op::ITER_START => {
                     let iter_idx = Self::read_u16(&ins, i_ptr);
-                    let locked_param_count = Self::read_u16(&ins, i_ptr+2) as usize;
-                    let type_flag = ins[i_ptr+4];
+                    let locked_param_count = Self::read_u16(&ins, i_ptr + 2) as usize;
+                    let type_flag = ins[i_ptr + 4];
                     i_ptr += 5;
                     let params_start = self.stack.len() - locked_param_count;
                     let iterator = &self.base_iterators[iter_idx as usize];
-                    let closed_values = self.stack.drain(params_start..).collect();
+                    let closed_values = Rc::new(self.stack.drain(params_start..).collect());
                     let base_pointer = self.stack.len();
 
                     // Space for the locals to exist on the stack
@@ -288,7 +281,7 @@ impl VM {
 
                 op::ITER_NEXT => {
                     let iter_idx = ins[i_ptr] as usize;
-                    let jmp_ptr = Self::read_u32(&ins, i_ptr+1) as usize;
+                    let jmp_ptr = Self::read_u32(&ins, i_ptr + 1) as usize;
                     // This might be bad
                     if self.frame_mut().iter_next(iter_idx) {
                         i_ptr = jmp_ptr;
@@ -394,11 +387,13 @@ impl VM {
     }
 
     fn read_u16(ins: &Bytes, ptr: usize) -> u16 {
-        ((ins[ptr] as u16) << 8) ^ ins[ptr+1] as u16
+        ((ins[ptr] as u16) << 8) ^ ins[ptr + 1] as u16
     }
 
-    fn 
-    read_u32(ins: &Bytes, ptr: usize) -> u32 {
-        ((ins[ptr] as u32) << 24) ^ ((ins[ptr+1] as u32) << 16) ^ ((ins[ptr+2] as u32) << 8) ^ ins[ptr+3] as u32
+    fn read_u32(ins: &Bytes, ptr: usize) -> u32 {
+        ((ins[ptr] as u32) << 24)
+            ^ ((ins[ptr + 1] as u32) << 16)
+            ^ ((ins[ptr + 2] as u32) << 8)
+            ^ ins[ptr + 3] as u32
     }
 }

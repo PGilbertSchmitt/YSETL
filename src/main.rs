@@ -1,5 +1,5 @@
 use compiler::{bytecode::print_bytecode, compiler::Compiler};
-use object::object::BaseObject;
+use object::object::Object;
 use parser::{
     debug::pair_structure,
     grammar::{Rule, YsetlParser},
@@ -26,6 +26,7 @@ fn main() {
         foo = (val) => choose x, y, z in A -> x * y * z == val;
         print foo(696);
         print foo(1111);
+        print {1,{2,{4,{4,{4,{4,{4,{4,{4,{4,{2},7},7},7},7},7},7},7},7},7}};
     ",
     );
     let comp = Compiler::new();
@@ -38,9 +39,9 @@ fn main() {
 
     for (i, c) in bc.constants.iter().enumerate() {
         match c {
-            BaseObject::Closure { function, .. } => {
+            Object::Closure { inner, .. } => {
                 println!(":: START CLOSURE INSTRUCTIONS [{i}] ::");
-                print_bytecode(&function.ins);
+                print_bytecode(&inner.executor.ins);
                 println!("::  END CLOSURE INSTRUCTIONS  [{i}] ::\n");
             }
             _ => (),

@@ -320,8 +320,8 @@ expr = _{
   | ternary_expr
   | switch_expr
   | select_expr
-  | block_expr
   | gen_expr
+  | block_expr
 }
 
 expr_list = !{ expr ~ (comma ~ expr)* ~ comma? }
