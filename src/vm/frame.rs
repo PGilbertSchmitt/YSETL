@@ -36,7 +36,7 @@ impl IterCollection {
     }
 
     pub fn current_value(&self) -> Object {
-        self.collection.get(self.pos).unwrap().clone()
+        self.collection[self.pos].clone()
     }
 }
 
@@ -79,7 +79,7 @@ pub struct YsetlIter {
 #[derive(Debug)]
 pub struct Frame {
     pub ins: Bytes,
-    pub return_ptr: u64,
+    pub return_ptr: usize,
     pub stack_base: usize,
     pub closed_values: Vec<Object>,
     iterator: Option<YsetlIter>,
@@ -88,7 +88,7 @@ pub struct Frame {
 impl Frame {
     pub fn new_as_func(
         ins: Bytes,
-        return_ptr: u64,
+        return_ptr: usize,
         stack_base: usize,
         closed_values: Vec<Object>,
     ) -> Self {
@@ -103,7 +103,7 @@ impl Frame {
 
     pub fn new_as_iter(
         ins: Bytes,
-        return_ptr: u64,
+        return_ptr: usize,
         stack_base: usize,
         closed_values: Vec<Object>,
         as_tuple: bool,
@@ -135,7 +135,7 @@ impl Frame {
         collections.push(collections.last().unwrap().clone());
     }
 
-    pub fn iter_next(&mut self, iter_idx: usize, mut on_continue: impl FnMut()) {
+    pub fn iter_next(&mut self, iter_idx: usize) -> bool {
         let sub_iter = self.iterator_at_mut(iter_idx);
         sub_iter.increment();
         if sub_iter.finished() {
@@ -147,8 +147,9 @@ impl Frame {
                     iter.reset();
                 }
             }
+            false
         } else {
-            on_continue();
+            true
         }
     }
 
@@ -215,16 +216,10 @@ impl Frame {
     }
 
     fn iterator_at(&self, idx: usize) -> &IterCollection {
-        self.iterator()
-            .collections
-            .get(idx)
-            .expect("Went past collection bound")
+        &self.iterator().collections[idx]
     }
 
     fn iterator_at_mut(&mut self, idx: usize) -> &mut IterCollection {
-        self.iterator_mut()
-            .collections
-            .get_mut(idx)
-            .expect("Went past collection bound")
+        &mut self.iterator_mut().collections[idx]
     }
 }
