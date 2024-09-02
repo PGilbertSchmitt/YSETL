@@ -49,3 +49,13 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [ ] REPL
 - [ ] IO
 - [ ] Separate Compilation and Execute steps (executing pre-compiled bytecode bundles)
+
+---
+
+## Potential optimizations
+
+Overall, this is pretty **heckin** slow compared to other dynamically typed interpreted languages like JS and Ruby, which I didn't expect with the design being so simple. However, after a light bit of profiling, I realized that there are several sections which could be slimmed down.
+
+- Primarily, I realize that `Object::wrap()` is doing a lot of work to copy `Rc` wrappers around my `BaseObject` instances. I do not need to use reference counted heap-allocated numbers and bools, so one major optimization I could do is to remove the 2-layer object system. Instead, the singlular `Object` enum will box the vector types (`String`s, `Tuple`s, `Set`s, and `Closure`s) itself, while leaving the scalars (`Int`s, `Float`s, `Atom`s, and `Bool`s) cloned directly. The `seed` of the `Object` (the cached hash value) is also something that is not needed for the scalar values. The `Object::hash` function would already need to re-hash the `seed` every time, so the scalars may as well always calculate their own hash from the inner value instead. Caching a hash value is only important for collections, so they'll hold on to their own `OnceCell` seed values internally.
+
+- Switching frames by grabbing copies of the Closure/Iterator bytecode could slower than if I stitched all instructions into a single `Bytes` array and jumped inside it, though more testing is necessary to confirm that. However, I feel pretty confident that that step would be a requirement if I wanted to create precompiled blobs that could be passed to the VM as a separate step.

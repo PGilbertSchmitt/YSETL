@@ -22,8 +22,10 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        A = [1..100];
-        print choose x, y, z in A -> x * y * z == 696;
+        A = [2..100];
+        foo = (val) => choose x, y, z in A -> x * y * z == val;
+        print foo(696);
+        print foo(1111);
     ",
     );
     let comp = Compiler::new();
