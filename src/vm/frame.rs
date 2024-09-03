@@ -65,7 +65,9 @@ impl Collector {
     pub fn push(&mut self, obj: Object) {
         match self {
             Self::Tuple(v) => v.push(obj),
-            Self::Set(_s) => todo!(),
+            Self::Set(s) => {
+                s.insert(obj);
+            }
         }
     }
 }
@@ -180,7 +182,7 @@ impl Frame {
     pub fn collector(self) -> Object {
         match self.iterator.unwrap().output {
             Collector::Tuple(v) => Object::new_tuple(v),
-            _ => todo!(),
+            Collector::Set(s) => Object::new_set(s),
         }
     }
 
@@ -191,12 +193,6 @@ impl Frame {
             self.return_ptr,
             self.stack_base,
         );
-
-        // println!("Closed Over: {{");
-        // self.closed_values.iter().for_each(|v| {
-        //     println!("\t{}", v.to_debug_string());
-        // });
-        // println!("}}");
 
         let iter = self.iterator.as_ref().unwrap();
         println!("Iterators: {{");

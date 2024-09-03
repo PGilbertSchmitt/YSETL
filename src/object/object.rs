@@ -36,8 +36,7 @@ pub trait ObjectOps {
 #[derive(Debug, Clone)]
 pub enum Object {
     Null,
-    True,
-    False,
+    Bool(bool),
     Int(i64),
     Float(f64),
     String {
@@ -73,9 +72,16 @@ impl Object {
         }
     }
 
-    pub fn new_set(elements: Vec<Object>) -> Self {
+    pub fn new_set_from_vec(elements: Vec<Object>) -> Self {
         Self::Set {
             elements: Rc::new(HashSet::from_iter(elements)),
+            seed: Rc::new(OnceCell::new()),
+        }
+    }
+
+    pub fn new_set(elements: HashSet<Object>) -> Self {
+        Self::Set {
+            elements: Rc::new(elements),
             seed: Rc::new(OnceCell::new()),
         }
     }
@@ -123,25 +129,17 @@ impl ObjectOps for Object {
 
     fn is_truthy(&self) -> bool {
         match self {
-            Self::Null | Self::False | Self::Int(0) | Self::Float(0.0) => false,
+            Self::Null | Self::Bool(false) | Self::Int(0) | Self::Float(0.0) => false,
             _ => true,
         }
     }
 
     fn truthy_convert(&self) -> Self {
-        if self.is_truthy() {
-            Self::True
-        } else {
-            Self::False
-        }
+        Self::Bool(self.is_truthy())
     }
 
     fn not(&self) -> Self {
-        if self.is_truthy() {
-            Self::False
-        } else {
-            Self::True
-        }
+        Self::Bool(!self.is_truthy())
     }
 
     fn negate(&self) -> Self {
@@ -149,7 +147,7 @@ impl ObjectOps for Object {
             Object::Int(x) => Object::Int(-x),
             Object::Float(x) => Object::Float(-x),
             _ => {
-                panic!("Cannot negate non-boolean value {}", self.to_debug_string())
+                panic!("Cannot negate non-numeric value {}", self.to_debug_string())
             }
         }
     }
@@ -223,7 +221,7 @@ impl ObjectOps for Object {
         };
 
         if flag & TUP_BASE == 0 {
-            Object::new_set(elements)
+            Object::new_set_from_vec(elements)
         } else {
             Object::new_tuple(elements)
         }
@@ -232,8 +230,7 @@ impl ObjectOps for Object {
     fn to_s(&self) -> String {
         match self {
             Self::Null => String::from("null"),
-            Self::False => String::from("false"),
-            Self::True => String::from("true"),
+            Self::Bool(val) => String::from(val.to_string()),
             Self::Int(x) => x.to_string(),
             Self::Float(x) => x.to_string(),
             Self::String { value, .. } => value.clone(),
@@ -295,8 +292,7 @@ impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Object::Null, Object::Null) => true,
-            (Object::True, Object::True) => true,
-            (Object::False, Object::False) => true,
+            (Object::Bool(x), Object::Bool(y)) => x == y,
             (Object::Int(x), Object::Int(y)) => x == y,
             (Object::String { value, .. }, Object::String { value: other, .. }) => value == other,
             (
@@ -341,8 +337,7 @@ impl Hash for Object {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             Object::Null => {}
-            Object::True => true.hash(state),
-            Object::False => false.hash(state),
+            Object::Bool(val) => val.hash(state),
             Object::Int(x) => x.hash(state),
             Object::Float(x) => {
                 unsafe {

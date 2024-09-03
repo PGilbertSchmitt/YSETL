@@ -36,8 +36,8 @@ pub struct VM {
 impl VM {
     pub fn new(bc: Bytecode) -> Self {
         let null_ref = Object::Null;
-        let true_ref = Object::True;
-        let false_ref = Object::False;
+        let true_ref = Object::Bool(true);
+        let false_ref = Object::Bool(false);
 
         VM {
             frames: vec![Frame::new_as_func(bc.instructions, 0, 0, Rc::new(vec![]))],
@@ -118,7 +118,7 @@ impl VM {
                     let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
 
                     self.stack.push(if flag & TUP_BASE == 0 {
-                        Object::new_set(elements)
+                        Object::new_set_from_vec(elements)
                     } else {
                         Object::new_tuple(elements)
                     })
@@ -336,6 +336,12 @@ impl VM {
                     println!("{}", self.stack.pop_one().to_s());
                 }
 
+                op::EQ | op::NEQ => {
+                    let right = self.stack.pop_one();
+                    let left = self.stack.pop_one();
+                    self.stack.push(Object::Bool(left == right));
+                }
+
                 // Binary Operations (no jumps)
                 op::TAKE
                 | op::EXP
@@ -355,9 +361,7 @@ impl VM {
                 | op::LT
                 | op::LTEQ
                 | op::GT
-                | op::GTEQ
-                | op::EQ
-                | op::NEQ => {
+                | op::GTEQ => {
                     let right = self.stack.pop_one();
                     let left = self.stack.pop_one();
                     self.stack.push(execute_binop(op, left, right))
