@@ -22,11 +22,7 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        A = [2..100];
-        foo = (val) => choose x, y, z in A -> x * y * z == val;
-        print foo(696);
-        print foo(1111);
-        print {1,{2,{4,{4,{4,{4,{4,{4,{4,{4,{2},7},7},7},7},7},7},7},7},7}};
+        print (true & false) | (true ^ true);
     ",
     );
     let comp = Compiler::new();

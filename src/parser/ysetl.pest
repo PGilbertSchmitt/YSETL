@@ -50,7 +50,6 @@ comma      = _{ "," }
 lodash     = _{ "_" }
 b_slash    = _{ "\\" }
 quote      = _{ "\"" }
-pipe       = _{ "|" }
 dot        = _{ "." }
 qst        = _{ "?" }
 eq         = _{ "=" }
@@ -80,6 +79,7 @@ caret    = { "^" }
 dollar   = { "$" }
 tilde    = { "~" }
 amp      = { "&" }
+pipe     = { "|" }
 at       = { "@" }
 lt       = { "<" }
 gt       = { ">" }

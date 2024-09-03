@@ -39,7 +39,7 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Control flow
 - [x] Global variables
 - [x] Local variables
-- [ ] Boolean operations
+- [x] Boolean operations
 - [ ] Tuple operations
 - [ ] Set operations
 - [ ] Map operations
@@ -56,4 +56,4 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 
 Overall, this is pretty **heckin** slow compared to other dynamically typed interpreted languages like JS and Ruby, which I didn't expect with the design being so simple. However, after a light bit of profiling, I realized that there are several sections which could be slimmed down.
 
-- Switching frames by grabbing copies of the Closure/Iterator bytecode could slower than if I stitched all instructions into a single `Bytes` array and jumped inside it, though more testing is necessary to confirm that. However, I feel pretty confident that that step would be a requirement if I wanted to create precompiled blobs that could be passed to the VM as a separate step.
+- Switching frames by grabbing copies of the Closure/Iterator bytecode could slower than if I stitched all instructions into a single lazy-static `Vec<u8>` array and jumped inside it, though more testing is necessary to confirm that. However, I feel pretty confident that that step would be a requirement if I wanted to create precompiled blobs that could be passed to the VM as a separate step.
