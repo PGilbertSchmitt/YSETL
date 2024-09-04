@@ -27,7 +27,7 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Integers
 - [x] Floats
 - [x] Strings
-- [ ] Atoms
+- [x] Atoms
 - [x] Tuples (Lists)
 - [x] Sets
 - [ ] Maps (specialized Sets)

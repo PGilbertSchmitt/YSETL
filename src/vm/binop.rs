@@ -16,7 +16,7 @@ pub fn execute_binop(op: Op, left: Object, right: Object) -> Object {
             lookup(op).0,
             left.to_debug_string(),
             right.to_debug_string(),
-        )
+        ),
     }
 }
 
@@ -81,7 +81,7 @@ fn execute_float_math(op: Op, left: f64, right: f64) -> Object {
         op::LTEQ => Object::Bool(left <= right),
         op::GT => Object::Bool(left > right),
         op::GTEQ => Object::Bool(left >= right),
-        
+
         _ => panic!(
             "Could not perform op {} on floats f{} and f{}",
             lookup(op).0,
@@ -96,7 +96,7 @@ fn execute_bool_math(op: Op, left: bool, right: bool) -> Object {
         op::BIT_AND => Object::Bool(left & right),
         op::BIT_OR => Object::Bool(left | right),
         op::BIT_XOR => Object::Bool(left ^ right),
-        
+
         _ => panic!("Could not perform op {} on booleans", lookup(op).0),
     }
 }

@@ -22,7 +22,15 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        print (true & false) | (true ^ true);
+        print :foo == :foo;
+        print :foo == newat;
+        x = newat;
+        y = newat;
+        z = x;
+        print x == y;
+        print x == z;
+        print :foo;
+        print x;
     ",
     );
     let comp = Compiler::new();

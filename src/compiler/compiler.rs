@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
 use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 
-use crate::object::object::{Executor, Object};
+use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
     BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp,
@@ -13,6 +14,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct Compiler {
     constants: Vec<Object>,
+    named_atoms: HashMap<String, u32>,
     iterators: Vec<Executor>,
     scopes: ScopeStack,
 }
@@ -21,6 +23,7 @@ impl Compiler {
     pub fn new() -> Self {
         Compiler {
             constants: Vec::new(),
+            named_atoms: HashMap::new(),
             iterators: Vec::new(),
             scopes: ScopeStack::new(),
         }
@@ -33,11 +36,16 @@ impl Compiler {
 
     pub fn finish(self) -> Bytecode {
         let (instructions, global_count) = self.scopes.final_scope();
+        
+        let mut atoms: Vec<Atom> = self.named_atoms.into_iter().map(|(s, v)| Atom::new(v,s)).collect();
+        atoms.sort_by_key(|a| a.0);
+
         Bytecode {
             instructions,
             constants: self.constants,
             iterators: self.iterators,
             global_count,
+            atoms,
         }
     }
 
@@ -95,6 +103,7 @@ impl Compiler {
             Expr::Null => self.emit(op::NULL),
             Expr::True => self.emit(op::TRUE),
             Expr::False => self.emit(op::FALSE),
+            Expr::Newat => self.emit(op::MAKE_ATOM),
             Expr::Integer(value) => {
                 let const_ptr = self.add_const(Object::Int(value));
                 self.emit_with_u16(op::CONST, const_ptr);
@@ -102,6 +111,11 @@ impl Compiler {
             Expr::Float(value) => {
                 let const_ptr = self.add_const(Object::Float(value));
                 self.emit_with_u16(op::CONST, const_ptr);
+            }
+            Expr::Atom(name) => {
+                let atom_count = self.named_atoms.len() as u32;
+                let atom_ptr = *self.named_atoms.entry(name).or_insert(atom_count);
+                self.emit_with_u32(op::GET_ATOM, atom_ptr);
             }
             Expr::String(value) => {
                 let const_ptr = self.add_const(Object::new_string(value));
@@ -553,6 +567,8 @@ impl Compiler {
             .try_into()
             .expect("Too many constants were generated")
     }
+
+    // fn add_atom(&mut self, )
 
     fn ins_len(&self) -> usize {
         self.scopes.ins_len()

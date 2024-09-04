@@ -6,7 +6,7 @@ use super::preop::execute_pre_op;
 use bytes::Bytes;
 
 use crate::compiler::bytecode::{Bytecode, STEP_BIT, TUP_BASE};
-use crate::object::object::{Executor, Object, ObjectOps};
+use crate::object::object::{Atom, Executor, Object, ObjectOps};
 use crate::op;
 
 const MAX_STACK_SIZE: usize = 4096;
@@ -27,6 +27,7 @@ pub struct VM {
     frames: Vec<Frame>,
     stack: Vec<Object>,
     globals: Vec<Object>,
+    atoms: Vec<Atom>,
 
     null_ref: Object,
     true_ref: Object,
@@ -50,6 +51,7 @@ impl VM {
                 .into_iter()
                 .map(|_| null_ref.clone())
                 .collect(),
+            atoms: bc.atoms,
 
             null_ref,
             true_ref,
@@ -138,6 +140,19 @@ impl VM {
                     };
                     self.stack
                         .push(Object::make_range(range_start, range_end, step, flag))
+                }
+
+                op::GET_ATOM => {
+                    let atom_idx = Self::read_u32(&ins, i_ptr) as usize;
+                    i_ptr += 4;
+                    self.stack.push(Object::Atom(self.atoms[atom_idx].clone()));
+                }
+
+                op::MAKE_ATOM => {
+                    let atom_name = Atom::gen_atom_name();
+                    let atom = Atom::new(self.atoms.len() as u32, atom_name);
+                    self.atoms.push(atom.clone());
+                    self.stack.push(Object::Atom(atom));
                 }
 
                 op::MAKE_FN => {
@@ -333,7 +348,7 @@ impl VM {
                 }
 
                 op::PRINT => {
-                    println!("{}", self.stack.pop_one().to_s());
+                    println!("{}", self.stack.pop_one().to_debug_string());
                 }
 
                 op::EQ | op::NEQ => {

@@ -16,6 +16,9 @@ pub const GET_LOCKED: Op = 9;
 pub const MAKE_LIT_COL: Op = 10;
 pub const MAKE_RN_COL: Op = 11;
 
+pub const GET_ATOM: Op = 12;
+pub const MAKE_ATOM: Op = 13;
+
 pub const MAKE_FN: Op = 15;
 
 // Stack Operations
@@ -83,7 +86,7 @@ pub const INIT: Op = 246;
 pub const DBG_PRINT_STACK_TOP: Op = 255;
 
 // Provides the name of an opcode, and the number and byte-lengths of its operands
-pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
+pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
     match byte {
         CONST => ("CONST", &[2]),
         NULL => ("NULL", &[]),
@@ -96,6 +99,8 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         GET_LOCKED => ("GET_LOCKED", &[2]),
         MAKE_LIT_COL => ("MAKE_LIT_COL", &[1, 2]),
         MAKE_RN_COL => ("MAKE_RN_COL", &[1]),
+        GET_ATOM => ("GET_ATOM", &[4]),
+        MAKE_ATOM => ("MAKE_ATOM", &[]),
         MAKE_FN => ("MAKE_FN", &[2, 2]),
 
         POP => ("POP", &[]),
@@ -154,6 +159,6 @@ pub fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
 
         DBG_PRINT_STACK_TOP => ("DBG_PRINT_STACK_TOP", &[]),
 
-        _ => panic!("No debug lookup for byte: {}", byte),
+        _ => panic!("No debug lookup for byte"),
     }
 }
