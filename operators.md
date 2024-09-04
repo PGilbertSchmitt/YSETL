@@ -1,6 +1,6 @@
 |Prefix Operator|Use|
 |--:|:--|
-|`+`|Identity function (must be a number)|
+|`+`|Identity function (NO-OP)|
 |`-`|Negative of target (must be a number)|
 |`#`|Size function (length of string/tuple, cardinality of set)|
 |`!`|Logical negation (boolean coersion)|

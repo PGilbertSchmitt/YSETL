@@ -44,6 +44,7 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [ ] Set operations
 - [ ] Map operations
 - [x] Iteration
+- [ ] Destructuring
 
 ### Other
 - [ ] REPL

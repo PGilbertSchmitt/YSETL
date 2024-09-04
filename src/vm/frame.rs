@@ -2,7 +2,7 @@ use std::{collections::HashSet, rc::Rc};
 
 use bytes::Bytes;
 
-use crate::object::object::{IterKind, Object, ObjectOps};
+use crate::object::object::{FrameOps, IterKind, Object};
 
 #[derive(Debug, Clone)]
 struct IterCollection {

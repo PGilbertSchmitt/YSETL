@@ -22,17 +22,28 @@ pub trait ObjectOps {
     fn is_truthy(&self) -> bool;
     fn is_null(&self) -> bool;
     fn truthy_convert(&self) -> Self;
-    fn not(&self) -> Self;
-    fn negate(&self) -> Self;
     fn inner_int(&self) -> i64;
     fn inner_fn(&self) -> (Executor, usize, usize);
-    fn to_vec(&self) -> Vec<Object>;
-    fn iter_kind(&self) -> IterKind;
 
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self;
 
     fn to_s(&self) -> String;
     fn to_debug_string(&self) -> String;
+}
+
+pub trait FrameOps {
+    fn to_vec(&self) -> Vec<Object>;
+    fn iter_kind(&self) -> IterKind;
+}
+
+pub trait PreOps {
+    fn not(self) -> Self;
+    fn negate(self) -> Self;
+    fn size(self) -> Self;
+    fn head(self) -> Self;
+    fn last(self) -> Self;
+    fn tail(self) -> Self;
+    fn init(self) -> Self;
 }
 
 #[derive(Debug, Clone)]
@@ -141,20 +152,6 @@ impl ObjectOps for Object {
         Self::Bool(self.is_truthy())
     }
 
-    fn not(&self) -> Self {
-        Self::Bool(!self.is_truthy())
-    }
-
-    fn negate(&self) -> Self {
-        match self {
-            Object::Int(x) => Object::Int(-x),
-            Object::Float(x) => Object::Float(-x),
-            _ => {
-                panic!("Cannot negate non-numeric value {}", self.to_debug_string())
-            }
-        }
-    }
-
     fn inner_int(&self) -> i64 {
         match &self {
             &Object::Int(x) => *x,
@@ -182,25 +179,6 @@ impl ObjectOps for Object {
                 )
             }
             _ => panic!("Could not convert {self:?} into a function"),
-        }
-    }
-
-    fn to_vec(&self) -> Vec<Object> {
-        match &self {
-            &Object::Tuple { elements, .. } => elements.to_vec(),
-            &Object::String { value, .. } => value
-                .split("")
-                .map(|str| Object::new_string(str.to_owned()))
-                .collect(),
-            _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
-        }
-    }
-
-    fn iter_kind(&self) -> IterKind {
-        match &self {
-            &Object::Tuple { .. } => IterKind::Tuple,
-            &Object::String { .. } => IterKind::String,
-            _ => unimplemented!(),
         }
     }
 
@@ -290,6 +268,124 @@ impl ObjectOps for Object {
             ),
             _ => self.to_s(),
         }
+    }
+}
+
+impl FrameOps for Object {
+    fn to_vec(&self) -> Vec<Object> {
+        match &self {
+            &Object::Tuple { elements, .. } => elements.to_vec(),
+            &Object::String { value, .. } => value
+                .split("")
+                .map(|str| Object::new_string(str.to_owned()))
+                .collect(),
+            _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
+        }
+    }
+
+    fn iter_kind(&self) -> IterKind {
+        match &self {
+            &Object::Tuple { .. } => IterKind::Tuple,
+            &Object::String { .. } => IterKind::String,
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl PreOps for Object {
+    fn not(self) -> Self {
+        Self::Bool(!self.is_truthy())
+    }
+
+    fn negate(self) -> Self {
+        match self {
+            Object::Int(x) => Object::Int(-x),
+            Object::Float(x) => Object::Float(-x),
+            _ => {
+                panic!("Cannot negate non-numeric value {}", self.to_debug_string())
+            }
+        }
+    }
+    
+    fn size(self) -> Self {
+        match self {
+            Object::Null => panic!("Null has no cardinality"),
+            Object::Bool(val) => if val { Object::Int(1) } else { Object::Int(0) }
+            Object::Int(_) => self,
+            Object::Float(v) => Object::Int(v.trunc() as i64),
+            Object::Atom(a) => Object::Int(a.0 as i64),
+            Object::String { value, .. } => Object::Int(value.len() as i64),
+            Object::Tuple { elements, .. } => Object::Int(elements.len() as i64),
+            Object::Set { elements, .. } => Object::Int(elements.len() as i64),
+            Object::Closure { .. } => panic!("Cannot find cardinality of a function"),
+        }
+    }
+
+    fn head(self) -> Self {
+        match self {
+            Object::Tuple { elements, .. } => {
+                if let Some(first) = elements.first() {
+                    first.clone()
+                } else {
+                    Object::Null
+                }
+            }
+            Object::Set { elements, .. } => {
+                if let Some(first) = elements.iter().next() {
+                    first.clone()
+                } else {
+                    Object::Null
+                }
+            }
+            Object::String { value, .. } => {
+                if value.is_empty() {
+                    Object::Null
+                } else {
+                    Object::new_string(value.get(0..1).unwrap().to_owned())
+                }
+            },
+            _ => panic!("Cannot get the head of {}", self.to_s()),
+        }
+    }
+
+    fn last(self) -> Self {
+        match self {
+            Object::Tuple { elements, .. } => {
+                if let Some(last) = elements.last() {
+                    last.clone()
+                } else {
+                    Object::Null
+                }
+            }
+            // Set's don't have a particular order, but a single set value will always maintain
+            // its iteration order. I don't have a better solution than just iterating, but these
+            // aren't super useful operations for sets anyways. I may need to come up with
+            // something better (and cooler).
+            Object::Set { elements, .. } => {
+                if let Some(first) = elements.iter().last() {
+                    first.clone()
+                } else {
+                    Object::Null
+                }
+            }
+            Object::String { value, .. } => {
+                if value.is_empty() {
+                    Object::Null
+                } else {
+                    let len = value.len();
+                    Object::new_string(value.get(len-1..len).unwrap().to_owned())
+                }
+            },
+            _ => panic!("Cannot get the last of {}", self.to_s()),
+        }
+    }
+
+    fn tail(self) -> Self {
+        todo!();
+    }
+
+    fn init(self) -> Self {
+        todo!();
     }
 }
 

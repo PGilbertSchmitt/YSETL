@@ -348,7 +348,7 @@ impl VM {
                 }
 
                 op::PRINT => {
-                    println!("{}", self.stack.pop_one().to_debug_string());
+                    println!("{}", self.stack.pop_one().to_s());
                 }
 
                 op::EQ | op::NEQ => {
@@ -383,7 +383,13 @@ impl VM {
                 }
 
                 // Prefix Operations
-                op::NOT | op::NEGATE => {
+                op::NOT
+                | op::NEGATE
+                | op::SIZE
+                | op::HEAD
+                | op::LAST
+                | op::TAIL
+                | op::INIT => {
                     let right = self.stack.pop_one();
                     self.stack.push(execute_pre_op(op, right))
                 }

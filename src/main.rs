@@ -22,15 +22,24 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-        print :foo == :foo;
-        print :foo == newat;
-        x = newat;
-        y = newat;
-        z = x;
-        print x == y;
-        print x == z;
-        print :foo;
-        print x;
+        Tup = [1..5];
+        Set = {1..6};
+        Str = \"abcdefg\";
+        print Tup;
+        print Set;
+        print Str;
+        print \"Head:\";
+        print ^Tup;
+        print ^Set;
+        print ^Str;
+        print \"tail:\";
+        print $Tup;
+        print $Set;
+        print $Str;
+        print \"Size\";
+        print #Tup;
+        print #Set;
+        print #Str;
     ",
     );
     let comp = Compiler::new();
