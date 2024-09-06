@@ -8,7 +8,7 @@ use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
     BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp,
-    SingleIterator, Stmt, StmtList,
+    SingleIterator, Stmt, StmtList, StmtListWithCapture,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -80,7 +80,7 @@ impl Compiler {
                     _ => unimplemented!(),
                 }
             }
-            _ => panic!("Unimplemented in compile_stmt: {node:?}"),
+            Stmt::Return(expr) => self.compile_return(expr),
         }
     }
 
@@ -94,7 +94,10 @@ impl Compiler {
                 self.emit(op::PRINT);
                 self.emit(op::NULL);
             }
-            _ => panic!("Unimplemented in compile_stmt_like_expr: {node:?}"),
+            Stmt::Assign { .. } => panic!("Cannot assign a variable here!"),
+            // It doesn't matter what's left on the stack here because returning
+            // will reset the stack anyways.
+            Stmt::Return(expr) => self.compile_return(expr),
         }
     }
 
@@ -211,8 +214,53 @@ impl Compiler {
                 self.overwrite_u32(jump_operand_ptr, jump_destination as u32)
             }
             Expr::Select { op, iterator } => self.compile_select_iterator(op, iterator),
-            _ => panic!("Unimplemented in compile_expr: {node:?}"),
+            Expr::Switch { condition: _, cases: _ } => {
+
+            },
+            // A block is basically just a function with 0 parameters that is executed immediately, but I
+            // feel like there should be a more efficient way of doing this. It's not coming to me
+            // immediately, but perhaps I can at least combine a real function with it's block expr
+            // into a single function. That shuffling act should be much simpler to solve.
+            Expr::Block(StmtListWithCapture { stmt_list, implicit_return }) => {
+                self.scopes.enter_scope();
+                stmt_list.into_iter().for_each(|stmt| self.compile_stmt(stmt));
+                if let Some(stmt) = implicit_return {
+                    self.compile_stmt_like_expr(*stmt);
+                } else {
+                    self.emit(op::NULL);
+                }
+                self.emit(op::RETURN);
+                let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
+
+                let locked_sym_count = locked_symbols.len();
+                for sym in locked_symbols {
+                    self.load_symbol_on_stack(sym);
+                }
+
+                let const_ptr = self.add_const(Object::new_closure(
+                    Executor {
+                        ins,
+                        num_locals: symbol_count,
+                        locked_values: Rc::new(Vec::new()),
+                    },
+                    0,
+                    0,
+                ));
+
+                // This is the part I don't like
+                self.emit_with_u16_u16(op::MAKE_FN, const_ptr, locked_sym_count as u16);
+                self.emit_with_u16(op::CALL, 0);
+            }
         };
+    }
+
+    fn compile_return(&mut self, expr: Option<Expr>) {
+        if let Some(expr) = expr {
+            self.compile_expr(expr);
+        } else {
+            self.emit(op::NULL);
+        }
+        self.emit(op::RETURN);
     }
 
     fn compile_binary_op_with_jump(&mut self, op: Op, lhs: Box<Expr>, rhs: Box<Expr>) {
