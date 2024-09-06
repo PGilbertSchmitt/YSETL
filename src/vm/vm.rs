@@ -351,10 +351,16 @@ impl VM {
                     println!("{}", self.stack.pop_one().to_s());
                 }
 
-                op::EQ | op::NEQ => {
+                op::EQ => {
                     let right = self.stack.pop_one();
                     let left = self.stack.pop_one();
                     self.stack.push(Object::Bool(left == right));
+                }
+
+                op::NEQ => {
+                    let right = self.stack.pop_one();
+                    let left = self.stack.pop_one();
+                    self.stack.push(Object::Bool(left != right));
                 }
 
                 // Binary Operations (no jumps)
