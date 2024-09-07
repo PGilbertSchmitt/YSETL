@@ -6,7 +6,7 @@
  * to only check the operations, then from there determine the operations individually. This means
  * there is some duplication of match logic, but this is overall a lot easier for me to manage.
  */
-use crate::object::object::{Object, ObjectOps};
+use crate::object::object::{Object, ObjectOps, PreOps};
 use crate::op::{self, Op};
 
 pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
@@ -21,15 +21,15 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
         op::LTEQ => op_less_than_or_eq(left, right),
         op::GT => op_less_than(right, left),
         op::GTEQ => op_less_than_or_eq(right, left),
-        op::TAKE => todo!(),
+        op::TAKE => op_take(left, right),
         op::WITH_BIT_LEFT => todo!(),
         op::LESS_BIT_RIGHT => todo!(),
         op::BIT_AND => todo!(),
         op::BIT_OR => todo!(),
         op::BIT_XOR => todo!(),
-        op::IN => todo!(),
-        op::NOTIN => todo!(),
-        op::SUBSET => todo!(),
+        op::IN => op_in(left, right),
+        op::NOTIN => op_notin(left, right),
+        op::SUBSET => op_subset(left, right),
         op::LOGICAL_IMPL => todo!(),
         _ => unreachable!(),
     }
@@ -188,7 +188,7 @@ fn op_modulus(left: &Object, right: &Object) -> Object {
 fn op_exponentiation(left: &Object, right: &Object) -> Object {
     match (left, right) {
         (Object::Int(left), Object::Int(right)) => {
-            if *right < 0 {
+            if right.is_negative() {
                 Object::Float((*left as f64).powf(*right as f64))
             } else {
                 Object::Int(left.pow(*right as u32))
@@ -218,12 +218,81 @@ fn op_less_than_or_eq(left: &Object, right: &Object) -> Object {
     Object::Bool(left <= right)
 }
 
+fn op_take(left: &Object, right: &Object) -> Object {
+    let left = match left {
+        Object::Int(x) => *x,
+        _ => panic!("Left side of take operator must be an integer"),
+    };
+    let magnitude: usize = left.abs() as usize;
+    let get_range = |col_size: usize| {
+        if magnitude > col_size {
+            std::ops::Range { start: 0, end: col_size }
+        } else if left.is_negative() {
+            std::ops::Range { start: col_size - magnitude, end: col_size }
+        } else {
+            std::ops::Range { start: 0, end: magnitude }
+        }
+    };
+
+    match right {
+        Object::String { value, .. } => {
+            let range = get_range(value.len());
+            Object::new_string(value[range].to_owned())
+        },
+        Object::Tuple { elements, .. } => {
+            let range = get_range(elements.len());
+            Object::new_tuple(elements[range].into_iter().map(Object::clone).collect())
+        },
+        Object::Set { elements, .. } => {
+            let new_elements: Vec<_> = elements.iter().take(magnitude).map(Object::clone).collect();
+            Object::new_set_from_vec(new_elements)
+        },
+        _ => panic!("Can only take from tuples, sets, and strings"),
+    }
+}
+
+fn op_in(left: &Object, right: &Object) -> Object {
+    match right {
+        Object::Tuple { elements, .. } => Object::Bool(elements.contains(left)),
+        Object::Set { elements, .. } => Object::Bool(elements.contains(left)),
+        Object::String { value, .. } => {
+            let char = match left {
+                Object::String { value, .. } => {
+                    if value.len() == 1 {
+                        value.chars().next().unwrap()
+                    } else {
+                        panic!("Can only check for membership of single char in a string");
+                    }
+                }
+                _ => panic!("Cannot check for membership of {} in a string", left.to_debug_string()),
+            };
+            Object::Bool(value.contains(char))
+        },
+        _ => panic!("Cannot check for membership in type {}", right.to_debug_string()),
+    }
+}
+
+fn op_notin(left: &Object, right: &Object) -> Object {
+    op_in(left, right).not()
+}
+
+fn op_subset(left: &Object, right: &Object) -> Object {
+    match (left, right) {
+        (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
+            Object::Bool(elements.is_subset(other))
+        }
+        _ => panic!("Can only check for subsets between 2 sets"),
+    }
+}
+
 #[cfg(test)]
 #[rustfmt::skip]
 mod tests {
+    use std::collections::HashSet;
+
     use crate::{object::object::{Object, PreOps}, op::{self, Op}};
     use super::execute_binop;
-    type TestCase<'a> = (&'a Object, &'a Object, Object);
+    type TestCase<'a> = (&'a Object, &'a Object, &'a Object);
     type TestCases<'a> = Vec<TestCase<'a>>;
 
     const ZERO_INT: Object = Object::Int(0);
@@ -235,8 +304,8 @@ mod tests {
     const FIVE_FLOAT: Object = Object::Float(5.0);
     const EIGHT_FLOAT: Object = Object::Float(8.0);
 
-    fn assert_case(op: Op, l: &Object, r: &Object, o: Object) {
-        assert_eq!(execute_binop(op, &l, &r), o);
+    fn assert_case(op: Op, l: &Object, r: &Object, o: &Object) {
+        assert_eq!(&execute_binop(op, &l, &r), o);
     }
 
     fn assert_cases(op: Op, cases: TestCases) {
@@ -249,8 +318,12 @@ mod tests {
         Object::new_tuple(elements.into_iter().map(|i| Object::Int(*i)).collect())
     }
 
+    fn make_raw_set(elements: &[i64]) -> HashSet<Object> {
+        elements.into_iter().map(|i| Object::Int(*i)).collect()
+    }
+
     fn make_set(elements: &[i64]) -> Object {
-        Object::new_set_from_vec(elements.into_iter().map(|i| Object::Int(*i)).collect())
+        Object::new_set(make_raw_set(elements))
     }
 
     fn make_str(val: &str) -> Object {
@@ -260,65 +333,65 @@ mod tests {
     #[test]
     fn test_addition() {
         assert_cases(op::ADD, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Int(13)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Float(13.0)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Float(13.0)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Float(13.0)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Int(13)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Float(13.0)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Float(13.0)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Float(13.0)),
         ]);
     }
 
     #[test]
     fn test_concatenation() {
         assert_cases(op::ADD, vec![
-            (&make_tup(&[1,2,3]), &make_tup(&[4,5,6]), make_tup(&[1,2,3,4,5,6])),
-            (&make_str("abc"), &make_str("def"), make_str("abcdef")),
+            (&make_tup(&[1,2,3]), &make_tup(&[4,5,6]), &make_tup(&[1,2,3,4,5,6])),
+            (&make_str("abc"), &make_str("def"), &make_str("abcdef")),
         ]);
     }
 
     #[test]
     fn test_union() {
-        assert_case(op::ADD, &make_set(&[1,2,3]), &make_set(&[2,3,4]), make_set(&[1,2,3,4]));
+        assert_case(op::ADD, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[1,2,3,4]));
     }
 
     #[test]
     fn test_difference() {
         assert_cases(op::SUBTRACT, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Int(3)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Float(3.0)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Float(3.0)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Float(3.0)),
-            (&make_set(&[1,2,3,4,5]), &make_set(&[2,3,4]), make_set(&[1,5])),
+            (&EIGHT_INT, &FIVE_INT, &Object::Int(3)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Float(3.0)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Float(3.0)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Float(3.0)),
+            (&make_set(&[1,2,3,4,5]), &make_set(&[2,3,4]), &make_set(&[1,5])),
         ]);
     }
 
     #[test]
     fn test_multiplication() {
         assert_cases(op::MULT, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Int(40)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Float(40.0)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Float(40.0)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Float(40.0)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Int(40)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Float(40.0)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Float(40.0)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Float(40.0)),
         ]);
     }
 
     #[test]
     fn test_intersection() {
-        assert_case(op::MULT, &make_set(&[1,2,3]), &make_set(&[2,3,4]), make_set(&[2,3]));
+        assert_case(op::MULT, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[2,3]));
     }
 
     #[test]
     fn test_repetition() {
         assert_cases(op::MULT, vec![
-            (&ZERO_INT, &make_tup(&[1,3,5]), make_tup(&[])),
-            (&THREE_INT, &make_tup(&[1,3,5]), make_tup(&[1,3,5,1,3,5,1,3,5])),
-            (&ZERO_INT, &make_str("abc"), make_str("")),
-            (&THREE_INT, &make_str("abc"), make_str("abcabcabc")),
+            (&ZERO_INT, &make_tup(&[1,3,5]), &make_tup(&[])),
+            (&THREE_INT, &make_tup(&[1,3,5]), &make_tup(&[1,3,5,1,3,5,1,3,5])),
+            (&ZERO_INT, &make_str("abc"), &make_str("")),
+            (&THREE_INT, &make_str("abc"), &make_str("abcabcabc")),
         ]);
     }
 
     #[test]
     fn test_zipping() {
-        assert_case(op::MULT, &make_tup(&[1,2,3]), &make_tup(&[6,7,8,9]), Object::new_tuple(vec![
+        assert_case(op::MULT, &make_tup(&[1,2,3]), &make_tup(&[6,7,8,9]), &Object::new_tuple(vec![
             make_tup(&[1,6]),
             make_tup(&[2,7]),
             make_tup(&[3,8]),
@@ -328,119 +401,228 @@ mod tests {
     #[test]
     fn test_division() {
         assert_cases(op::DIV, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Int(1)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Float(1.6)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Float(1.6)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Float(1.6)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Int(1)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Float(1.6)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Float(1.6)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Float(1.6)),
         ]);
     }
 
     #[test]
     #[should_panic]
     fn test_division_divide_by_zero() {
-        assert_case(op::DIV, &FIVE_INT, &ZERO_INT, Object::Int(0));
+        assert_case(op::DIV, &FIVE_INT, &ZERO_INT, &Object::Int(0));
     }
 
     #[test]
     fn test_modulus() {
         assert_cases(op::MOD, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Int(3)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Float(3.0)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Float(3.0)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Float(3.0)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Int(3)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Float(3.0)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Float(3.0)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Float(3.0)),
         ]);
     }
 
     #[test]
     #[should_panic]
     fn test_division_mod_by_zero() {
-        assert_case(op::MOD, &FIVE_INT, &ZERO_INT, Object::Int(0));
+        assert_case(op::MOD, &FIVE_INT, &ZERO_INT, &Object::Int(0));
     }
 
     #[test]
     fn test_exponentiation() {
         assert_cases(op::EXP, vec![
-            (&FIVE_INT, &THREE_INT, Object::Int(125)),
-            (&FIVE_INT, &THREE_FLOAT, Object::Float(125.0)),
-            (&FIVE_FLOAT, &THREE_INT, Object::Float(125.0)),
-            (&FIVE_FLOAT, &THREE_FLOAT, Object::Float(125.0)),
+            (&FIVE_INT, &THREE_INT, &Object::Int(125)),
+            (&FIVE_INT, &THREE_FLOAT, &Object::Float(125.0)),
+            (&FIVE_FLOAT, &THREE_INT, &Object::Float(125.0)),
+            (&FIVE_FLOAT, &THREE_FLOAT, &Object::Float(125.0)),
 
-            (&FIVE_INT, &THREE_INT.negate(), Object::Float(0.008)),
-            (&FIVE_INT, &THREE_FLOAT.negate(), Object::Float(0.008)),
-            (&FIVE_FLOAT, &THREE_INT.negate(), Object::Float(0.008)),
-            (&FIVE_FLOAT, &THREE_FLOAT.negate(), Object::Float(0.008)),
+            (&FIVE_INT, &THREE_INT.negate(), &Object::Float(0.008)),
+            (&FIVE_INT, &THREE_FLOAT.negate(), &Object::Float(0.008)),
+            (&FIVE_FLOAT, &THREE_INT.negate(), &Object::Float(0.008)),
+            (&FIVE_FLOAT, &THREE_FLOAT.negate(), &Object::Float(0.008)),
         ]);
     }
 
     #[test]
     fn test_less_than() {
         assert_cases(op::LT, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Bool(false)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(false)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(false)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
-            (&FIVE_INT, &EIGHT_INT, Object::Bool(true)),
-            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(true)),
-            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(true)),
-            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(true)),
-            (&FIVE_INT, &FIVE_INT, Object::Bool(false)),
-            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(false)),
-            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(false)),
-            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_INT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_INT, &Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_FLOAT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, &Object::Bool(true)),
+            (&FIVE_INT, &FIVE_INT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_INT, &Object::Bool(false)),
+            (&FIVE_INT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, &Object::Bool(false)),
         ]);
     }
 
     #[test]
     fn test_less_than_or_equal() {
         assert_cases(op::LTEQ, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Bool(false)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(false)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(false)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
-            (&FIVE_INT, &EIGHT_INT, Object::Bool(true)),
-            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(true)),
-            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(true)),
-            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(true)),
-            (&FIVE_INT, &FIVE_INT, Object::Bool(true)),
-            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(true)),
-            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(true)),
-            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_INT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_INT, &Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_FLOAT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, &Object::Bool(true)),
+            (&FIVE_INT, &FIVE_INT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_INT, &Object::Bool(true)),
+            (&FIVE_INT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, &Object::Bool(true)),
         ]);
     }
 
     #[test]
     fn test_greater_than() {
         assert_cases(op::GT, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Bool(true)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(true)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(true)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
-            (&FIVE_INT, &EIGHT_INT, Object::Bool(false)),
-            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(false)),
-            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(false)),
-            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(false)),
-            (&FIVE_INT, &FIVE_INT, Object::Bool(false)),
-            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(false)),
-            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(false)),
-            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_INT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_INT, &Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_FLOAT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, &Object::Bool(false)),
+            (&FIVE_INT, &FIVE_INT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_INT, &Object::Bool(false)),
+            (&FIVE_INT, &FIVE_FLOAT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, &Object::Bool(false)),
         ]);
     }
 
     #[test]
     fn test_greater_than_or_equal() {
         assert_cases(op::GTEQ, vec![
-            (&EIGHT_INT, &FIVE_INT, Object::Bool(true)),
-            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(true)),
-            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(true)),
-            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
-            (&FIVE_INT, &EIGHT_INT, Object::Bool(false)),
-            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(false)),
-            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(false)),
-            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(false)),
-            (&FIVE_INT, &FIVE_INT, Object::Bool(true)),
-            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(true)),
-            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(true)),
-            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_INT, &Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_INT, &Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_INT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_INT, &Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_FLOAT, &Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, &Object::Bool(false)),
+            (&FIVE_INT, &FIVE_INT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_INT, &Object::Bool(true)),
+            (&FIVE_INT, &FIVE_FLOAT, &Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, &Object::Bool(true)),
+        ]);
+    }
+
+    #[test]
+    fn test_take_from_string() {
+        let string_rhs = make_str("abcde");
+        let string_empty = make_str("");
+
+        assert_cases(op::TAKE, vec![
+            (&THREE_INT, &string_rhs, &make_str("abc")),
+            (&THREE_INT.negate(), &string_rhs, &make_str("cde")),
+
+            (&ZERO_INT, &string_rhs, &string_empty),
+            (&ZERO_INT.negate(), &string_rhs, &string_empty),
+
+            (&FIVE_INT, &string_rhs, &string_rhs),
+            (&FIVE_INT.negate(), &string_rhs, &string_rhs),
+
+            (&EIGHT_INT, &string_rhs, &string_rhs),
+            (&EIGHT_INT.negate(), &string_rhs, &string_rhs),
+        ]);
+    }
+
+    #[test]
+    fn test_take_from_tuple() {
+        let tuple_rhs = make_tup(&[1,2,3,4,5]);
+        let tuple_empty = make_tup(&[]);
+
+        assert_cases(op::TAKE, vec![
+            (&THREE_INT, &tuple_rhs, &make_tup(&[1,2,3])),
+            (&THREE_INT.negate(), &tuple_rhs, &make_tup(&[3,4,5])),
+
+            (&ZERO_INT, &tuple_rhs, &tuple_empty),
+            (&ZERO_INT.negate(), &tuple_rhs, &tuple_empty),
+
+            (&FIVE_INT, &tuple_rhs, &tuple_rhs),
+            (&FIVE_INT.negate(), &tuple_rhs, &tuple_rhs),
+
+            (&EIGHT_INT, &tuple_rhs, &tuple_rhs),
+            (&EIGHT_INT.negate(), &tuple_rhs, &tuple_rhs),
+        ]);
+    }
+
+    #[test]
+    fn test_take_from_set() {
+        let set_rhs = make_set(&[1,2,3,4,5]);
+        let set_empty = make_set(&[]);
+
+        assert_cases(op::TAKE, vec![
+            (&ZERO_INT, &set_rhs, &set_empty),
+            (&ZERO_INT.negate(), &set_rhs, &set_empty),
+
+            (&FIVE_INT, &set_rhs, &set_rhs),
+            (&FIVE_INT.negate(), &set_rhs, &set_rhs),
+
+            (&EIGHT_INT, &set_rhs, &set_rhs),
+            (&EIGHT_INT.negate(), &set_rhs, &set_rhs),
+        ]);
+
+        // Since there's no ordering inside of sets, we can only guarantee the size of the output
+
+        let inner_orig = make_raw_set(&[1,2,3,4,5]);
+
+        match execute_binop(op::TAKE, &THREE_INT, &set_rhs) {
+            Object::Set { elements, .. } => {
+                assert_eq!(elements.len(), 3);
+                assert!(elements.is_subset(&inner_orig));
+            },
+            _ => panic!("Did not evaluate to set"),
+        };
+
+        match execute_binop(op::TAKE, &THREE_INT.negate(), &set_rhs) {
+            Object::Set { elements, .. } => {
+                assert_eq!(elements.len(), 3);
+                assert!(elements.is_subset(&inner_orig));
+            },
+            _ => panic!("Did not evaluate to set"),
+        };
+    }
+
+    #[test]
+    fn test_membership() {
+        assert_cases(op::IN, vec![
+            (&THREE_INT, &make_tup(&[1,2,3]), &Object::Bool(true)),
+            (&FIVE_INT, &make_tup(&[1,2,3]), &Object::Bool(false)),
+            (&THREE_INT, &make_set(&[1,2,3]), &Object::Bool(true)),
+            (&FIVE_INT, &make_set(&[1,2,3]), &Object::Bool(false)),
+            (&make_str("a"), &make_str("abc"), &Object::Bool(true)),
+            (&make_str("d"), &make_str("abc"), &Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_non_membership() {
+        assert_cases(op::NOTIN, vec![
+            (&THREE_INT, &make_tup(&[1,2,3]), &Object::Bool(false)),
+            (&FIVE_INT, &make_tup(&[1,2,3]), &Object::Bool(true)),
+            (&THREE_INT, &make_set(&[1,2,3]), &Object::Bool(false)),
+            (&FIVE_INT, &make_set(&[1,2,3]), &Object::Bool(true)),
+            (&make_str("a"), &make_str("abc"), &Object::Bool(false)),
+            (&make_str("d"), &make_str("abc"), &Object::Bool(true)),
+        ]);
+    }
+
+    #[test]
+    fn test_subset() {
+        assert_cases(op::SUBSET, vec![
+            (&make_set(&[1,3]), &make_set(&[1,2,3,4]), &Object::Bool(true)),
+            (&make_set(&[1,5]), &make_set(&[1,2,3,4]), &Object::Bool(false)),
         ]);
     }
 }

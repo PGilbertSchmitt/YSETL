@@ -25,9 +25,9 @@ Examples:
 |`+`|Addition of numbers; Union of sets; Concatenation of strings/tuples| ✔ |
 |`-`|Subtraction of numbers; Difference of sets| ✔ |
 |`*`|Multiplication of numbers; Intersection of sets; Zip tuples; If used between an integer and a string/tuple, the collection is repeated an amount of times equal to the integer. If the number is zero, it returns the empty string/tuple.| ✔ |
-|`/`|Division of numbers, evaluates to float if either values are floats, otherwise evaluates to int| |
+|`/`|Division of numbers, evaluates to float if either values are floats, otherwise evaluates to int| ✔ |
 |`?`|Modulus operation (both operands must be integers)| ✔ |
-|`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| |
+|`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| ✔ |
 |`**`|Exponentiation. Evaluates to a float, unless both operands are integers AND the power is positive.| ✔ |
 |`&`|Bitwise AND| |
 |`\|`|Bitwise OR| |
@@ -39,8 +39,8 @@ Examples:
 |`??`|Null coelescing| ✔ |
 |`%(expr)`/`%ident`|Reducer. Given the form `X %(expr) Y`, `Y` must evaluate to a collection. The `expr` must evaluate to a binary function. `X` is the initial accululator| |
 |`.(expr)`/`.ident`|Passes the 2 operands into the results of expr, as long as expr evaluates to a binary function. Equivalent to (expr)(X, Y)| |
-|`in`|Test for membership in a collection| |
-|`notin`|Negative form of infix `in`| |
+|`in`|Test for membership in a collection| ✔ |
+|`notin`|Negative form of infix `in`| ✔ |
 |`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| |
 |`impl`|Logical implication| |
 |`iff`|Logical equivalence (like infix `==`, but with different precendence)| ✔ |
