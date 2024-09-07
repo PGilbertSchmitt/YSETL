@@ -40,8 +40,8 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 - [x] Global variables
 - [x] Local variables
 - [x] Boolean operations
-- [ ] Tuple operations
-- [ ] Set operations
+- [x] Tuple operations
+- [x] Set operations
 - [ ] Map operations
 - [x] Iteration
 - [ ] Destructuring

@@ -22,8 +22,8 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, St
         op::GT => op_less_than(right, left),
         op::GTEQ => op_less_than_or_eq(right, left),
         op::TAKE => op_take(left, right),
-        op::WITH_BIT_LEFT => todo!(),
-        op::LESS_BIT_RIGHT => todo!(),
+        op::WITH_BIT_LEFT => op_with_bitshift_left(left, right),
+        op::LESS_BIT_RIGHT => op_less_bitshift_right(left, right),
         op::BIT_AND => op_bitwise_and(left, right),
         op::BIT_OR => op_bitwise_or(left, right),
         op::BIT_XOR => op_bitwise_xor(left, right),
@@ -33,6 +33,10 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, St
         op::SUBSET => op_subset(left, right),
         _ => unreachable!(),
     }
+}
+
+fn op_error(op: &str, left: &Object, right: &Object) -> Result<Object, String> {
+    Err(format!("Cannot perform '{} {} {}'", left.to_debug_string(), op, right.to_debug_string()))
 }
 
 fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
@@ -63,11 +67,7 @@ fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
             Ok(Object::new_string(new_str))
         }
 
-        _ => Err(format!(
-            "Cannot add or union types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("+", left, right),
     }
 }
 
@@ -87,11 +87,7 @@ fn op_subtract(left: &Object, right: &Object) -> Result<Object, String> {
             },
         ) => Ok(Object::new_set(elements.difference(other).map(Object::clone).collect())),
 
-        _ => Err(format!(
-            "Cannot subtract types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("-", left, right),
     }
 }
 
@@ -141,11 +137,7 @@ fn op_multiply(left: &Object, right: &Object) -> Result<Object, String> {
             Ok(Object::new_tuple(zipped_elements))
         }
 
-        _ => Err(format!(
-            "Cannot multiply or intersect types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("*", left, right),
     }
 }
 
@@ -159,11 +151,7 @@ fn op_divide(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 / right)),
         (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left / *right as f64)),
 
-        _ => Err(format!(
-            "Cannot divide types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("/", left, right),
     }
 }
 
@@ -177,11 +165,7 @@ fn op_modulus(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 % right)),
         (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left % *right as f64)),
 
-        _ => Err(format!(
-            "Cannot divide types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("%", left, right),
     }
 }
 
@@ -198,11 +182,7 @@ fn op_exponentiation(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Int(left), Object::Float(right)) => Ok(Object::Float((*left as f64).powf(*right))),
         (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left.powf(*right as f64))),
 
-        _ => Err(format!(
-            "Cannot divide types {} and {}",
-            left.to_debug_string(),
-            right.to_debug_string()
-        )),
+        _ => op_error("**", left, right),
     }
 }
 
@@ -219,15 +199,15 @@ fn op_less_than_or_eq(left: &Object, right: &Object) -> Result<Object, String> {
 }
 
 fn op_take(left: &Object, right: &Object) -> Result<Object, String> {
-    let left = match left {
+    let left_value = match left {
         Object::Int(x) => *x,
         _ => return Err(format!("Left side of take operator must be an integer")),
     };
-    let magnitude: usize = left.abs() as usize;
+    let magnitude: usize = left_value.abs() as usize;
     let get_range = |col_size: usize| {
         if magnitude > col_size {
             std::ops::Range { start: 0, end: col_size }
-        } else if left.is_negative() {
+        } else if left_value.is_negative() {
             std::ops::Range { start: col_size - magnitude, end: col_size }
         } else {
             std::ops::Range { start: 0, end: magnitude }
@@ -247,7 +227,7 @@ fn op_take(left: &Object, right: &Object) -> Result<Object, String> {
             let new_elements: Vec<_> = elements.iter().take(magnitude).map(Object::clone).collect();
             Ok(Object::new_set_from_vec(new_elements))
         },
-        _ => Err(format!("Can only take from tuples, sets, and strings")),
+        _ => op_error("@", left, right),
     }
 }
 
@@ -268,12 +248,16 @@ fn op_in(left: &Object, right: &Object) -> Result<Object, String> {
             };
             Ok(Object::Bool(value.contains(char)))
         },
-        _ => Err(format!("Cannot check for membership in type {}", right.to_debug_string())),
+        _ => op_error("in", left, right),
     }
 }
 
 fn op_notin(left: &Object, right: &Object) -> Result<Object, String> {
-    Ok(op_in(left, right)?.not())
+    if let Ok(in_result) = op_in(left, right) {
+        Ok(in_result.not())
+    } else {
+        op_error("notin", left, right)
+    }
 }
 
 fn op_subset(left: &Object, right: &Object) -> Result<Object, String> {
@@ -281,7 +265,7 @@ fn op_subset(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
             Ok(Object::Bool(elements.is_subset(other)))
         }
-        _ => Err(format!("Can only check for subsets between 2 sets")),
+        _ => op_error("subset", left, right),
     }
 }
 
@@ -297,7 +281,7 @@ fn op_bitwise_and(left: &Object, right: &Object) -> Result<Object, String> {
                 elements: other, ..
             },
         ) => Ok(Object::new_set(elements.intersection(other).map(Object::clone).collect())),
-        _ => Err(format!("Cannot perform bitwise-and/intersesction operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+        _ => op_error("&", left, right),
     }
 }
 
@@ -313,7 +297,7 @@ fn op_bitwise_or(left: &Object, right: &Object) -> Result<Object, String> {
                 elements: other, ..
             },
         ) => Ok(Object::new_set(elements.union(other).map(Object::clone).collect())),
-        _ => Err(format!("Cannot perform bitwise-or/union operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+        _ => op_error("|", left, right),
     }
 }
 
@@ -321,14 +305,60 @@ fn op_bitwise_xor(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool(x ^ y)),
         (Object::Int(x), Object::Int(y)) => Ok(Object::Int(x ^ y)),
-        _ => Err(format!("Cannot perform xor operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+        _ => op_error("^", left, right),
     }
 }
 
 fn op_logical_implication(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool((!x) | y)),
-        _ => Err(format!("Cannot perform impl operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+        _ => op_error("impl", left, right),
+    }
+}
+
+fn op_with_bitshift_left(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Int(x), Object::Int(y)) => {
+            if x.is_negative() || y.is_negative() {
+                Err(format!("bitshift operations can't operate on negative integers"))
+            } else {
+                Ok(Object::Int(x << y))
+            }
+        },
+        (Object::Tuple { .. }, _) => {
+            let mut new_elements = left.inner_tuple();
+            new_elements.push(right.clone());
+            Ok(Object::new_tuple(new_elements))
+        }
+        (Object::Set { .. }, _) => {
+            let mut new_elements = left.inner_set();
+            new_elements.insert(right.clone());
+            Ok(Object::new_set(new_elements))
+        }
+        _ => op_error("<<", left, right),
+    }
+}
+
+fn op_less_bitshift_right(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Int(x), Object::Int(y)) => {
+            if x.is_negative() || y.is_negative() {
+                Err(format!("bitshift operations can't operate on negative integers"))
+            } else {
+                Ok(Object::Int(x >> y))
+            }
+        },
+        (Object::Tuple { .. }, _) => {
+            let mut new_elements = left.inner_tuple();
+            new_elements.insert(0, right.clone());
+            Ok(Object::new_tuple(new_elements))
+        }
+        (Object::Set { .. }, _) => {
+            let mut new_elements = left.inner_set();
+            new_elements.remove(right);
+            Ok(Object::new_set(new_elements))
+        }
+        _ => op_error(">>", left, right),
     }
 }
 
@@ -716,5 +746,47 @@ mod tests {
             (&Object::Bool(false), &Object::Bool(true), &Object::Bool(true)),
             (&Object::Bool(false), &Object::Bool(false), &Object::Bool(true)),
         ]);
+    }
+
+    #[test]
+    fn test_bitshift_left() {
+        assert_case(op::WITH_BIT_LEFT, &Object::Int(0b110), &Object::Int(3), &Object::Int(0b110000));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bitshift_left_negative() {
+        assert_case(op::WITH_BIT_LEFT, &Object::Int(0b110), &Object::Int(-3), &Object::Null);
+    }
+
+    #[test]
+    fn test_tuple_push() {
+        assert_case(op::WITH_BIT_LEFT, &make_tup(&[1,2,3]), &Object::Int(4), &make_tup(&[1,2,3,4]));
+    }
+
+    #[test]
+    fn test_set_insert() {
+        assert_case(op::WITH_BIT_LEFT, &make_set(&[1,2,3]), &Object::Int(4), &make_set(&[1,2,3,4]));
+    }
+
+    #[test]
+    fn test_bitshift_right() {
+        assert_case(op::LESS_BIT_RIGHT, &Object::Int(0b110000), &Object::Int(3), &Object::Int(0b110));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_bitshift_right_negative() {
+        assert_case(op::LESS_BIT_RIGHT, &Object::Int(0b110000), &Object::Int(-3), &Object::Null);
+    }
+
+    #[test]
+    fn test_tuple_unshift() {
+        assert_case(op::LESS_BIT_RIGHT, &make_tup(&[2,3,4]), &Object::Int(1), &make_tup(&[1,2,3,4]));
+    }
+
+    #[test]
+    fn test_set_less() {
+        assert_case(op::LESS_BIT_RIGHT, &make_set(&[1,2,3]), &Object::Int(2), &make_set(&[1,3]));
     }
 }

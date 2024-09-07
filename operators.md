@@ -32,8 +32,8 @@ Examples:
 |`&`|Bitwise AND; Alternative set intersection| ✔ |
 |`\|`|Bitwise OR; Alternative set union| ✔ |
 |`^`|Bitwise XOR| ✔ |
-|`<<`|If the first operand is a set, it returns a set with the second value inserted. If the first operand is a tuple, it returns a tuple with the second value pushed to the end. If both operands are integers, performs a bitwise left shift.| |
-|`>>`|If the first operand is a set, it returns a set with the second value removed. If the first operand is a tuple, it returns a tuple with the second value pushed to the front. If both operands are integers, performs a bitwise right shift.| |
+|`<<`|If the first operand is a set, it returns a set with the second value inserted. If the first operand is a tuple, it returns a tuple with the second value pushed to the end. If both operands are integers, performs a bitwise left shift.| ✔ |
+|`>>`|If the first operand is a set, it returns a set with the second value removed. If the first operand is a tuple, it returns a tuple with the second value pushed to the front. If both operands are integers, performs a bitwise right shift.| ✔ |
 |`&&`|Logical conjunction| ✔ |
 |`\|\|`|Logical disjunction| ✔ |
 |`??`|Null coelescing| ✔ |
@@ -49,6 +49,6 @@ Examples:
 |`union`|Keyword form of infix `+`| ✔ |
 |`inter`|Keyword form of infix `*`| ✔ |
 |`div`|Keyword form of infix `/`| ✔ |
-|`with`|Keyword form of infix `<<`| |
-|`less`|Keyword form of infix `>>`| |
+|`with`|Keyword form of infix `<<`| ✔ |
+|`less`|Keyword form of infix `>>`| ✔ |
 |`mod`|Keyword form of infix `?`| ✔ |

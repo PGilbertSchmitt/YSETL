@@ -25,6 +25,7 @@ pub trait ObjectOps {
     fn inner_int(&self) -> i64;
     fn inner_fn(&self) -> (Executor, usize, usize);
     fn inner_tuple(&self) -> Vec<Object>;
+    fn inner_set(&self) -> HashSet<Object>;
     fn is_zero(&self) -> bool;
     fn ord_flt(&self) -> f64;
 
@@ -188,6 +189,13 @@ impl ObjectOps for Object {
     fn inner_tuple(&self) -> Vec<Object> {
         match &self {
             &Object::Tuple { elements, .. } => (*elements.clone()).clone(),
+            _ => panic!("Could not convert {self:?} into a vector"),
+        }
+    }
+
+    fn inner_set(&self) -> HashSet<Object> {
+        match &self {
+            &Object::Set { elements, .. } => (*elements.clone()).clone(),
             _ => panic!("Could not convert {self:?} into a vector"),
         }
     }
