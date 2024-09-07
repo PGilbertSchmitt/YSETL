@@ -9,7 +9,7 @@
 use crate::object::object::{Object, ObjectOps, PreOps};
 use crate::op::{self, Op};
 
-pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
+pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, String> {
     match op {
         op::ADD => op_add(left, right),
         op::SUBTRACT => op_subtract(left, right),
@@ -35,13 +35,13 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
     }
 }
 
-fn op_add(left: &Object, right: &Object) -> Object {
+fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         // Adding numbers
-        (Object::Int(left), Object::Int(right)) => Object::Int(left + right),
-        (Object::Float(left), Object::Float(right)) => Object::Float(left + right),
-        (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 + right),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left + *right as f64),
+        (Object::Int(left), Object::Int(right)) => Ok(Object::Int(left + right)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left + right)),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 + right)),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left + *right as f64)),
 
         // Concat sets
         (
@@ -49,35 +49,35 @@ fn op_add(left: &Object, right: &Object) -> Object {
             Object::Set {
                 elements: other, ..
             },
-        ) => Object::new_set(elements.union(other).map(Object::clone).collect()),
+        ) => Ok(Object::new_set(elements.union(other).map(Object::clone).collect())),
 
         // Concat tuples
         (Object::Tuple { .. }, Object::Tuple { .. }) => {
-            Object::new_tuple(vec![left.inner_tuple(), right.inner_tuple()].concat())
+            Ok(Object::new_tuple(vec![left.inner_tuple(), right.inner_tuple()].concat()))
         }
 
         // Concat strings
         (Object::String { value, .. }, Object::String { value: other, .. }) => {
             let mut new_str = value.to_owned();
             new_str.push_str(other);
-            Object::new_string(new_str)
+            Ok(Object::new_string(new_str))
         }
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot add or union types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_subtract(left: &Object, right: &Object) -> Object {
+fn op_subtract(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         // Subtracting numbers
-        (Object::Int(left), Object::Int(right)) => Object::Int(left - right),
-        (Object::Float(left), Object::Float(right)) => Object::Float(left - right),
-        (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 - right),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left - *right as f64),
+        (Object::Int(left), Object::Int(right)) => Ok(Object::Int(left - right)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left - right)),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 - right)),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left - *right as f64)),
 
         // Set difference
         (
@@ -85,28 +85,28 @@ fn op_subtract(left: &Object, right: &Object) -> Object {
             Object::Set {
                 elements: other, ..
             },
-        ) => Object::new_set(elements.difference(other).map(Object::clone).collect()),
+        ) => Ok(Object::new_set(elements.difference(other).map(Object::clone).collect())),
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot subtract types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_multiply(left: &Object, right: &Object) -> Object {
+fn op_multiply(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         // Multiplying numbers
-        (Object::Int(left), Object::Int(right)) => Object::Int(left * right),
-        (Object::Float(left), Object::Float(right)) => Object::Float(left * right),
-        (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 * right),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left * *right as f64),
+        (Object::Int(left), Object::Int(right)) => Ok(Object::Int(left * right)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left * right)),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 * right)),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left * *right as f64)),
 
         // String repetition
         (Object::Int(x), Object::String { value, .. })
         | (Object::String { value, .. }, Object::Int(x)) => {
-            Object::new_string(String::from(value.repeat(*x as usize)))
+            Ok(Object::new_string(String::from(value.repeat(*x as usize))))
         }
 
         // Tuple repetition
@@ -119,7 +119,7 @@ fn op_multiply(left: &Object, right: &Object) -> Object {
                 .take(capacity)
                 .map(Object::clone)
                 .collect();
-            Object::new_tuple(new_elements)
+            Ok(Object::new_tuple(new_elements))
         }
 
         // Set intersection
@@ -128,7 +128,7 @@ fn op_multiply(left: &Object, right: &Object) -> Object {
             Object::Set {
                 elements: other, ..
             },
-        ) => Object::new_set(elements.intersection(other).map(Object::clone).collect()),
+        ) => Ok(Object::new_set(elements.intersection(other).map(Object::clone).collect())),
 
         // Tuple zip
         (Object::Tuple { .. }, Object::Tuple { .. }) => {
@@ -138,90 +138,90 @@ fn op_multiply(left: &Object, right: &Object) -> Object {
                 .zip(right.inner_tuple())
                 .map(|(l, r)| Object::new_tuple(vec![l, r]))
                 .collect();
-            Object::new_tuple(zipped_elements)
+            Ok(Object::new_tuple(zipped_elements))
         }
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot multiply or intersect types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_divide(left: &Object, right: &Object) -> Object {
+fn op_divide(left: &Object, right: &Object) -> Result<Object, String> {
     if right.is_zero() {
-        panic!("Divide by zero error");
+        return Err(format!("Divide by zero error"));
     }
     match (left, right) {
-        (Object::Int(left), Object::Int(right)) => Object::Int(left / right),
-        (Object::Float(left), Object::Float(right)) => Object::Float(left / right),
-        (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 / right),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left / *right as f64),
+        (Object::Int(left), Object::Int(right)) => Ok(Object::Int(left / right)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left / right)),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 / right)),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left / *right as f64)),
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot divide types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_modulus(left: &Object, right: &Object) -> Object {
+fn op_modulus(left: &Object, right: &Object) -> Result<Object, String> {
     if right.is_zero() {
-        panic!("Divide by zero error");
+        return Err(format!("Divide by zero error"));
     }
     match (left, right) {
-        (Object::Int(left), Object::Int(right)) => Object::Int(left % right),
-        (Object::Float(left), Object::Float(right)) => Object::Float(left % right),
-        (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 % right),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left % *right as f64),
+        (Object::Int(left), Object::Int(right)) => Ok(Object::Int(left % right)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left % right)),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 % right)),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left % *right as f64)),
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot divide types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_exponentiation(left: &Object, right: &Object) -> Object {
+fn op_exponentiation(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         (Object::Int(left), Object::Int(right)) => {
             if right.is_negative() {
-                Object::Float((*left as f64).powf(*right as f64))
+                Ok(Object::Float((*left as f64).powf(*right as f64)))
             } else {
-                Object::Int(left.pow(*right as u32))
+                Ok(Object::Int(left.pow(*right as u32)))
             }
         }
-        (Object::Float(left), Object::Float(right)) => Object::Float(left.powf(*right)),
-        (Object::Int(left), Object::Float(right)) => Object::Float((*left as f64).powf(*right)),
-        (Object::Float(left), Object::Int(right)) => Object::Float(left.powf(*right as f64)),
+        (Object::Float(left), Object::Float(right)) => Ok(Object::Float(left.powf(*right))),
+        (Object::Int(left), Object::Float(right)) => Ok(Object::Float((*left as f64).powf(*right))),
+        (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left.powf(*right as f64))),
 
-        _ => panic!(
+        _ => Err(format!(
             "Cannot divide types {} and {}",
             left.to_debug_string(),
             right.to_debug_string()
-        ),
+        )),
     }
 }
 
-fn op_less_than(left: &Object, right: &Object) -> Object {
+fn op_less_than(left: &Object, right: &Object) -> Result<Object, String> {
     let left = left.ord_flt();
     let right = right.ord_flt();
-    Object::Bool(left < right)
+    Ok(Object::Bool(left < right))
 }
 
-fn op_less_than_or_eq(left: &Object, right: &Object) -> Object {
+fn op_less_than_or_eq(left: &Object, right: &Object) -> Result<Object, String> {
     let left = left.ord_flt();
     let right = right.ord_flt();
-    Object::Bool(left <= right)
+    Ok(Object::Bool(left <= right))
 }
 
-fn op_take(left: &Object, right: &Object) -> Object {
+fn op_take(left: &Object, right: &Object) -> Result<Object, String> {
     let left = match left {
         Object::Int(x) => *x,
-        _ => panic!("Left side of take operator must be an integer"),
+        _ => return Err(format!("Left side of take operator must be an integer")),
     };
     let magnitude: usize = left.abs() as usize;
     let get_range = |col_size: usize| {
@@ -237,51 +237,51 @@ fn op_take(left: &Object, right: &Object) -> Object {
     match right {
         Object::String { value, .. } => {
             let range = get_range(value.len());
-            Object::new_string(value[range].to_owned())
+            Ok(Object::new_string(value[range].to_owned()))
         },
         Object::Tuple { elements, .. } => {
             let range = get_range(elements.len());
-            Object::new_tuple(elements[range].into_iter().map(Object::clone).collect())
+            Ok(Object::new_tuple(elements[range].into_iter().map(Object::clone).collect()))
         },
         Object::Set { elements, .. } => {
             let new_elements: Vec<_> = elements.iter().take(magnitude).map(Object::clone).collect();
-            Object::new_set_from_vec(new_elements)
+            Ok(Object::new_set_from_vec(new_elements))
         },
-        _ => panic!("Can only take from tuples, sets, and strings"),
+        _ => Err(format!("Can only take from tuples, sets, and strings")),
     }
 }
 
-fn op_in(left: &Object, right: &Object) -> Object {
+fn op_in(left: &Object, right: &Object) -> Result<Object, String> {
     match right {
-        Object::Tuple { elements, .. } => Object::Bool(elements.contains(left)),
-        Object::Set { elements, .. } => Object::Bool(elements.contains(left)),
+        Object::Tuple { elements, .. } => Ok(Object::Bool(elements.contains(left))),
+        Object::Set { elements, .. } => Ok(Object::Bool(elements.contains(left))),
         Object::String { value, .. } => {
             let char = match left {
                 Object::String { value, .. } => {
                     if value.len() == 1 {
                         value.chars().next().unwrap()
                     } else {
-                        panic!("Can only check for membership of single char in a string");
+                        return Err(format!("Can only check for membership of single char in a string"));
                     }
                 }
-                _ => panic!("Cannot check for membership of {} in a string", left.to_debug_string()),
+                _ => return Err(format!("Cannot check for membership of {} in a string", left.to_debug_string())),
             };
-            Object::Bool(value.contains(char))
+            Ok(Object::Bool(value.contains(char)))
         },
-        _ => panic!("Cannot check for membership in type {}", right.to_debug_string()),
+        _ => Err(format!("Cannot check for membership in type {}", right.to_debug_string())),
     }
 }
 
-fn op_notin(left: &Object, right: &Object) -> Object {
-    op_in(left, right).not()
+fn op_notin(left: &Object, right: &Object) -> Result<Object, String> {
+    Ok(op_in(left, right)?.not())
 }
 
-fn op_subset(left: &Object, right: &Object) -> Object {
+fn op_subset(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
         (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
-            Object::Bool(elements.is_subset(other))
+            Ok(Object::Bool(elements.is_subset(other)))
         }
-        _ => panic!("Can only check for subsets between 2 sets"),
+        _ => Err(format!("Can only check for subsets between 2 sets")),
     }
 }
 
@@ -305,7 +305,7 @@ mod tests {
     const EIGHT_FLOAT: Object = Object::Float(8.0);
 
     fn assert_case(op: Op, l: &Object, r: &Object, o: &Object) {
-        assert_eq!(&execute_binop(op, &l, &r), o);
+        assert_eq!(execute_binop(op, &l, &r).as_ref(), Ok(o));
     }
 
     fn assert_cases(op: Op, cases: TestCases) {
@@ -577,7 +577,7 @@ mod tests {
 
         let inner_orig = make_raw_set(&[1,2,3,4,5]);
 
-        match execute_binop(op::TAKE, &THREE_INT, &set_rhs) {
+        match execute_binop(op::TAKE, &THREE_INT, &set_rhs).unwrap() {
             Object::Set { elements, .. } => {
                 assert_eq!(elements.len(), 3);
                 assert!(elements.is_subset(&inner_orig));
@@ -585,7 +585,7 @@ mod tests {
             _ => panic!("Did not evaluate to set"),
         };
 
-        match execute_binop(op::TAKE, &THREE_INT.negate(), &set_rhs) {
+        match execute_binop(op::TAKE, &THREE_INT.negate(), &set_rhs).unwrap() {
             Object::Set { elements, .. } => {
                 assert_eq!(elements.len(), 3);
                 assert!(elements.is_subset(&inner_orig));
