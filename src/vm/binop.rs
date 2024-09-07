@@ -24,9 +24,9 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, St
         op::TAKE => op_take(left, right),
         op::WITH_BIT_LEFT => todo!(),
         op::LESS_BIT_RIGHT => todo!(),
-        op::BIT_AND => todo!(),
-        op::BIT_OR => todo!(),
-        op::BIT_XOR => todo!(),
+        op::BIT_AND => op_bitwise_and(left, right),
+        op::BIT_OR => op_bitwise_or(left, right),
+        op::BIT_XOR => op_bitwise_xor(left, right),
         op::IN => op_in(left, right),
         op::NOTIN => op_notin(left, right),
         op::SUBSET => op_subset(left, right),
@@ -43,7 +43,7 @@ fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Int(left), Object::Float(right)) => Ok(Object::Float(*left as f64 + right)),
         (Object::Float(left), Object::Int(right)) => Ok(Object::Float(left + *right as f64)),
 
-        // Concat sets
+        // Set union
         (
             Object::Set { elements, .. },
             Object::Set {
@@ -285,6 +285,46 @@ fn op_subset(left: &Object, right: &Object) -> Result<Object, String> {
     }
 }
 
+fn op_bitwise_and(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool(x & y)),
+        (Object::Int(x), Object::Int(y)) => Ok(Object::Int(x & y)),
+
+        // Set intersection
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Ok(Object::new_set(elements.intersection(other).map(Object::clone).collect())),
+        _ => Err(format!("Cannot perform bitwise-and/intersesction operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+    }
+}
+
+fn op_bitwise_or(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool(x | y)),
+        (Object::Int(x), Object::Int(y)) => Ok(Object::Int(x | y)),
+
+        // Set union
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Ok(Object::new_set(elements.union(other).map(Object::clone).collect())),
+        _ => Err(format!("Cannot perform bitwise-or/union operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+    }
+}
+
+fn op_bitwise_xor(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool(x ^ y)),
+        (Object::Int(x), Object::Int(y)) => Ok(Object::Int(x ^ y)),
+        _ => Err(format!("Cannot perform xor operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+    }
+}
+
 #[cfg(test)]
 #[rustfmt::skip]
 mod tests {
@@ -351,6 +391,7 @@ mod tests {
     #[test]
     fn test_union() {
         assert_case(op::ADD, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[1,2,3,4]));
+        assert_case(op::BIT_OR, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[1,2,3,4]));
     }
 
     #[test]
@@ -377,6 +418,7 @@ mod tests {
     #[test]
     fn test_intersection() {
         assert_case(op::MULT, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[2,3]));
+        assert_case(op::BIT_AND, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[2,3]));
     }
 
     #[test]
@@ -623,6 +665,39 @@ mod tests {
         assert_cases(op::SUBSET, vec![
             (&make_set(&[1,3]), &make_set(&[1,2,3,4]), &Object::Bool(true)),
             (&make_set(&[1,5]), &make_set(&[1,2,3,4]), &Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_bitwise_and() {
+        assert_cases(op::BIT_AND, vec![
+            (&Object::Int(0b10101010), &Object::Int(0b11110000), &Object::Int(0b10100000)),
+            (&Object::Bool(true), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(true), &Object::Bool(false), &Object::Bool(false)),
+            (&Object::Bool(false), &Object::Bool(true), &Object::Bool(false)),
+            (&Object::Bool(false), &Object::Bool(false), &Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_bitwise_or() {
+        assert_cases(op::BIT_OR, vec![
+            (&Object::Int(0b10101010), &Object::Int(0b11110000), &Object::Int(0b11111010)),
+            (&Object::Bool(true), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(true), &Object::Bool(false), &Object::Bool(true)),
+            (&Object::Bool(false), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(false), &Object::Bool(false), &Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_bitwise_xor() {
+        assert_cases(op::BIT_XOR, vec![
+            (&Object::Int(0b10101010), &Object::Int(0b11110000), &Object::Int(0b01011010)),
+            (&Object::Bool(true), &Object::Bool(true), &Object::Bool(false)),
+            (&Object::Bool(true), &Object::Bool(false), &Object::Bool(true)),
+            (&Object::Bool(false), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(false), &Object::Bool(false), &Object::Bool(false)),
         ]);
     }
 }

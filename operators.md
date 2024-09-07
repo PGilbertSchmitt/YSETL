@@ -29,11 +29,11 @@ Examples:
 |`?`|Modulus operation (both operands must be integers)| ✔ |
 |`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| ✔ |
 |`**`|Exponentiation. Evaluates to a float, unless both operands are integers AND the power is positive.| ✔ |
-|`&`|Bitwise AND| |
-|`\|`|Bitwise OR| |
-|`^`|Bitwise XOR| |
+|`&`|Bitwise AND; Alternative set intersection| ✔ |
+|`\|`|Bitwise OR; Alternative set union| ✔ |
+|`^`|Bitwise XOR| ✔ |
 |`<<`|If the first operand is a set, it returns a set with the second value inserted. If the first operand is a tuple, it returns a tuple with the second value pushed to the end. If both operands are integers, performs a bitwise left shift.| |
-|`>>`|If the first operand is a set, it returns a set with the second value removed. If the first operand is a tuple, it returns a typle with the second value pushed to the front. If both operands are integers, performs a bitwise right shift.| |
+|`>>`|If the first operand is a set, it returns a set with the second value removed. If the first operand is a tuple, it returns a tuple with the second value pushed to the front. If both operands are integers, performs a bitwise right shift.| |
 |`&&`|Logical conjunction| ✔ |
 |`\|\|`|Logical disjunction| ✔ |
 |`??`|Null coelescing| ✔ |
@@ -41,7 +41,7 @@ Examples:
 |`.(expr)`/`.ident`|Passes the 2 operands into the results of expr, as long as expr evaluates to a binary function. Equivalent to (expr)(X, Y)| |
 |`in`|Test for membership in a collection| ✔ |
 |`notin`|Negative form of infix `in`| ✔ |
-|`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| |
+|`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| ✔ |
 |`impl`|Logical implication| |
 |`iff`|Logical equivalence (like infix `==`, but with different precendence)| ✔ |
 |`and`|Keyword form of infix `&&`| ✔ |
