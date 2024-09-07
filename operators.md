@@ -42,7 +42,7 @@ Examples:
 |`in`|Test for membership in a collection| ✔ |
 |`notin`|Negative form of infix `in`| ✔ |
 |`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| ✔ |
-|`impl`|Logical implication| |
+|`impl`|Logical implication| ✔ |
 |`iff`|Logical equivalence (like infix `==`, but with different precendence)| ✔ |
 |`and`|Keyword form of infix `&&`| ✔ |
 |`or`|Keyword form of infix `\|\|`| ✔ |

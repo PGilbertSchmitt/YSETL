@@ -27,10 +27,10 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, St
         op::BIT_AND => op_bitwise_and(left, right),
         op::BIT_OR => op_bitwise_or(left, right),
         op::BIT_XOR => op_bitwise_xor(left, right),
+        op::LOGICAL_IMPL => op_logical_implication(left, right),
         op::IN => op_in(left, right),
         op::NOTIN => op_notin(left, right),
         op::SUBSET => op_subset(left, right),
-        op::LOGICAL_IMPL => todo!(),
         _ => unreachable!(),
     }
 }
@@ -322,6 +322,13 @@ fn op_bitwise_xor(left: &Object, right: &Object) -> Result<Object, String> {
         (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool(x ^ y)),
         (Object::Int(x), Object::Int(y)) => Ok(Object::Int(x ^ y)),
         _ => Err(format!("Cannot perform xor operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
+    }
+}
+
+fn op_logical_implication(left: &Object, right: &Object) -> Result<Object, String> {
+    match (left, right) {
+        (Object::Bool(x), Object::Bool(y)) => Ok(Object::Bool((!x) | y)),
+        _ => Err(format!("Cannot perform impl operation between types {} and {}", left.to_debug_string(), right.to_debug_string())),
     }
 }
 
@@ -698,6 +705,16 @@ mod tests {
             (&Object::Bool(true), &Object::Bool(false), &Object::Bool(true)),
             (&Object::Bool(false), &Object::Bool(true), &Object::Bool(true)),
             (&Object::Bool(false), &Object::Bool(false), &Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_implication() {
+        assert_cases(op::LOGICAL_IMPL, vec![
+            (&Object::Bool(true), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(true), &Object::Bool(false), &Object::Bool(false)),
+            (&Object::Bool(false), &Object::Bool(true), &Object::Bool(true)),
+            (&Object::Bool(false), &Object::Bool(false), &Object::Bool(true)),
         ]);
     }
 }
