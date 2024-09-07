@@ -27,10 +27,10 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
         op::IN => todo!(),
         op::NOTIN => todo!(),
         op::SUBSET => todo!(),
-        op::LT => todo!(),
-        op::LTEQ => todo!(),
-        op::GT => todo!(),
-        op::GTEQ => todo!(),
+        op::LT => op_less_than(left, right),
+        op::LTEQ => op_less_than_or_eq(left, right),
+        op::GT => op_less_than(right, left),
+        op::GTEQ => op_less_than_or_eq(right, left),
         op::LOGICAL_IMPL => todo!(),
         _ => unreachable!(),
     }
@@ -151,6 +151,18 @@ fn op_modulus(left: &Object, right: &Object) -> Object {
     }
 }
 
+fn op_less_than(left: &Object, right: &Object) -> Object {
+    let left = left.ord_flt();
+    let right = right.ord_flt();
+    Object::Bool(left < right)
+}
+
+fn op_less_than_or_eq(left: &Object, right: &Object) -> Object {
+    let left = left.ord_flt();
+    let right = right.ord_flt();
+    Object::Bool(left <= right)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{object::object::Object, op::{self, Op}};
@@ -247,6 +259,15 @@ mod tests {
     }
 
     #[test]
+    fn test_zipping() {
+        assert_case(op::MULT, &make_tup(&[1,2,3]), &make_tup(&[6,7,8,9]), Object::new_tuple(vec![
+            make_tup(&[1,6]),
+            make_tup(&[2,7]),
+            make_tup(&[3,8]),
+        ]));
+    }
+
+    #[test]
     fn test_division() {
         assert_cases(op::DIV, vec![
             (&EIGHT_INT, &FIVE_INT, Object::Int(1)),
@@ -276,5 +297,77 @@ mod tests {
     #[should_panic]
     fn test_division_mod_by_zero() {
         assert_case(op::MOD, &FIVE_INT, &ZERO_INT, Object::Int(0));
+    }
+
+    #[test]
+    fn test_less_than() {
+        assert_cases(op::LT, vec![
+            (&EIGHT_INT, &FIVE_INT, Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_INT, Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(true)),
+            (&FIVE_INT, &FIVE_INT, Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(false)),
+            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_less_than_or_equal() {
+        assert_cases(op::LTEQ, vec![
+            (&EIGHT_INT, &FIVE_INT, Object::Bool(false)),
+            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(false)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_INT, Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(true)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(true)),
+            (&FIVE_INT, &FIVE_INT, Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(true)),
+            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+        ]);
+    }
+
+    #[test]
+    fn test_greater_than() {
+        assert_cases(op::GT, vec![
+            (&EIGHT_INT, &FIVE_INT, Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_INT, Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(false)),
+            (&FIVE_INT, &FIVE_INT, Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(false)),
+            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(false)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(false)),
+        ]);
+    }
+
+    #[test]
+    fn test_greater_than_or_equal() {
+        assert_cases(op::GTEQ, vec![
+            (&EIGHT_INT, &FIVE_INT, Object::Bool(true)),
+            (&EIGHT_INT, &FIVE_FLOAT, Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_INT, Object::Bool(true)),
+            (&EIGHT_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+            (&FIVE_INT, &EIGHT_INT, Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_INT, Object::Bool(false)),
+            (&FIVE_INT, &EIGHT_FLOAT, Object::Bool(false)),
+            (&FIVE_FLOAT, &EIGHT_FLOAT, Object::Bool(false)),
+            (&FIVE_INT, &FIVE_INT, Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_INT, Object::Bool(true)),
+            (&FIVE_INT, &FIVE_FLOAT, Object::Bool(true)),
+            (&FIVE_FLOAT, &FIVE_FLOAT, Object::Bool(true)),
+        ]);
     }
 }

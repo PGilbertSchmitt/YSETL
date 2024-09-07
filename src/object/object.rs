@@ -26,6 +26,7 @@ pub trait ObjectOps {
     fn inner_fn(&self) -> (Executor, usize, usize);
     fn inner_tuple(&self) -> Vec<Object>;
     fn is_zero(&self) -> bool;
+    fn ord_flt(&self) -> f64;
 
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self;
 
@@ -193,6 +194,23 @@ impl ObjectOps for Object {
         }
     }
 
+    fn is_zero(&self) -> bool {
+        match self {
+            Object::Int(0) => true,
+            Object::Float(0.0) => true,
+            _ => false,
+        }
+    }
+
+    fn ord_flt(&self) -> f64 {
+        match self {
+            Object::Int(x) => *x as f64,
+            Object::Float(x) => *x,
+            Object::Set { elements, .. } => elements.len() as f64,
+            _ => panic!("Cannot compare value {}", self.to_debug_string()),
+        }
+    }
+
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self {
         let inclusive = flag & INCL_BIT != 0;
         let elements: Vec<Object> = if range_start <= range_end {
@@ -216,14 +234,6 @@ impl ObjectOps for Object {
             Object::new_set_from_vec(elements)
         } else {
             Object::new_tuple(elements)
-        }
-    }
-
-    fn is_zero(&self) -> bool {
-        match self {
-            Object::Int(0) => true,
-            Object::Float(0.0) => true,
-            _ => false,
         }
     }
 

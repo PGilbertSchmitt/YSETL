@@ -20,11 +20,11 @@ Examples:
 
 |Infix Operator|Use|Done|
 |--:|:--|:-:|
-|`<`/`>`/`<=`/`>=`|Compares numbers. If one or both of the operands is a collection, the expression treats them as their own size. eg `3 > [2..5]` is treated like `3 > 4` which is `false`, `[2..] < {2}| |
+|`<`/`>`/`<=`/`>=`|Compares numbers. If one or both of the operands is a collection, the expression treats them as their own size. eg `3 > [2..5]` is treated like `3 > 4` which is `false`, `[2..] < {2}| ✔ |
 |`==`/`!=`|Comparison of equality for 2 values. YSetL does not use reference equality, so two identical collections generated independently will be considered equal.| ✔ |
-|`+`|Addition of numbers; Union of sets; Concatenation of strings/tuples| |
-|`-`|Subtraction of numbers; Difference of sets| |
-|`*`|Multiplication of numbers; Intersection of sets; Zip tuples; If used between an integer and a string/tuple, the collection is concatenated by itself an amount of times equal to the integer. If the number is zero, it returns the empty string/tuple.| |
+|`+`|Addition of numbers; Union of sets; Concatenation of strings/tuples| ✔ |
+|`-`|Subtraction of numbers; Difference of sets| ✔ |
+|`*`|Multiplication of numbers; Intersection of sets; Zip tuples; If used between an integer and a string/tuple, the collection is repeated an amount of times equal to the integer. If the number is zero, it returns the empty string/tuple.| ✔ |
 |`/`|Division of numbers, evaluates to float if either values are floats, otherwise evaluates to int| |
 |`?`|Modulus operation (both operands must be integers)| ✔ |
 |`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| |
@@ -43,12 +43,12 @@ Examples:
 |`notin`|Negative form of infix `in`| |
 |`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| |
 |`impl`|Logical implication| |
-|`iff`|Logical equivalence (like infix `==`, but with different precendence)| |
-|`and`|Keyword form of infix `&&`| |
-|`or`|Keyword form of infix `\|\|`| |
-|`union`|Keyword form of infix `+`| |
-|`inter`|Keyword form of infix `*`| |
-|`div`|Keyword form of infix `/`| |
+|`iff`|Logical equivalence (like infix `==`, but with different precendence)| ✔ |
+|`and`|Keyword form of infix `&&`| ✔ |
+|`or`|Keyword form of infix `\|\|`| ✔ |
+|`union`|Keyword form of infix `+`| ✔ |
+|`inter`|Keyword form of infix `*`| ✔ |
+|`div`|Keyword form of infix `/`| ✔ |
 |`with`|Keyword form of infix `<<`| |
 |`less`|Keyword form of infix `>>`| |
 |`mod`|Keyword form of infix `?`| ✔ |
