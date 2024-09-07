@@ -1,13 +1,13 @@
+use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
 use once_cell::unsync::OnceCell;
+use rand::RngCore;
 use std::{
     collections::HashSet,
     hash::{DefaultHasher, Hash, Hasher},
     mem,
     rc::Rc,
 };
-use base64::{engine::general_purpose, Engine as _};
-use rand::RngCore;
 
 use crate::compiler::bytecode::{INCL_BIT, TUP_BASE};
 
@@ -187,9 +187,7 @@ impl ObjectOps for Object {
 
     fn inner_tuple(&self) -> Vec<Object> {
         match &self {
-            &Object::Tuple { elements, .. } => {
-                (*elements.clone()).clone()
-            }
+            &Object::Tuple { elements, .. } => (*elements.clone()).clone(),
             _ => panic!("Could not convert {self:?} into a vector"),
         }
     }
@@ -335,11 +333,17 @@ impl PreOps for Object {
             }
         }
     }
-    
+
     fn size(self) -> Self {
         match self {
             Object::Null => panic!("Null has no cardinality"),
-            Object::Bool(val) => if val { Object::Int(1) } else { Object::Int(0) }
+            Object::Bool(val) => {
+                if val {
+                    Object::Int(1)
+                } else {
+                    Object::Int(0)
+                }
+            }
             Object::Int(_) => self,
             Object::Float(v) => Object::Int(v.trunc() as i64),
             Object::Atom(a) => Object::Int(a.0 as i64),
@@ -372,7 +376,7 @@ impl PreOps for Object {
                 } else {
                     Object::new_string(value.get(0..1).unwrap().to_owned())
                 }
-            },
+            }
             _ => panic!("Cannot get the head of {}", self.to_s()),
         }
     }
@@ -402,9 +406,9 @@ impl PreOps for Object {
                     Object::Null
                 } else {
                     let len = value.len();
-                    Object::new_string(value.get(len-1..len).unwrap().to_owned())
+                    Object::new_string(value.get(len - 1..len).unwrap().to_owned())
                 }
-            },
+            }
             _ => panic!("Cannot get the last of {}", self.to_s()),
         }
     }
@@ -573,13 +577,13 @@ fn same_seed(seed1: &Rc<OnceCell<u64>>, seed2: &Rc<OnceCell<u64>>) -> Option<boo
 }
 
 #[derive(Clone, Debug)]
-pub struct Atom (pub u32, String);
+pub struct Atom(pub u32, String);
 
 impl Atom {
     pub fn new(value: u32, name: String) -> Self {
-        Self (value, name)
+        Self(value, name)
     }
-    
+
     pub fn gen_atom_name() -> String {
         let mut data = [0u8; 9];
         rand::thread_rng().fill_bytes(&mut data);

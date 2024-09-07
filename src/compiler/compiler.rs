@@ -36,8 +36,12 @@ impl Compiler {
 
     pub fn finish(self) -> Bytecode {
         let (instructions, global_count) = self.scopes.final_scope();
-        
-        let mut atoms: Vec<Atom> = self.named_atoms.into_iter().map(|(s, v)| Atom::new(v,s)).collect();
+
+        let mut atoms: Vec<Atom> = self
+            .named_atoms
+            .into_iter()
+            .map(|(s, v)| Atom::new(v, s))
+            .collect();
         atoms.sort_by_key(|a| a.0);
 
         Bytecode {
@@ -214,16 +218,22 @@ impl Compiler {
                 self.overwrite_u32(jump_operand_ptr, jump_destination as u32)
             }
             Expr::Select { op, iterator } => self.compile_select_iterator(op, iterator),
-            Expr::Switch { condition: _, cases: _ } => {
-
-            },
+            Expr::Switch {
+                condition: _,
+                cases: _,
+            } => {}
             // A block is basically just a function with 0 parameters that is executed immediately, but I
             // feel like there should be a more efficient way of doing this. It's not coming to me
             // immediately, but perhaps I can at least combine a real function with it's block expr
             // into a single function. That shuffling act should be much simpler to solve.
-            Expr::Block(StmtListWithCapture { stmt_list, implicit_return }) => {
+            Expr::Block(StmtListWithCapture {
+                stmt_list,
+                implicit_return,
+            }) => {
                 self.scopes.enter_scope();
-                stmt_list.into_iter().for_each(|stmt| self.compile_stmt(stmt));
+                stmt_list
+                    .into_iter()
+                    .for_each(|stmt| self.compile_stmt(stmt));
                 if let Some(stmt) = implicit_return {
                     self.compile_stmt_like_expr(*stmt);
                 } else {

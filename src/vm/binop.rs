@@ -6,7 +6,6 @@
  * to only check the operations, then from there determine the operations individually. This means
  * there is some duplication of match logic, but this is overall a lot easier for me to manage.
  */
-
 use crate::object::object::{Object, ObjectOps};
 use crate::op::{self, Op};
 
@@ -45,12 +44,15 @@ fn op_add(left: &Object, right: &Object) -> Object {
         (Object::Float(left), Object::Int(right)) => Object::Float(left + *right as f64),
 
         // Concat sets
-        (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
-            Object::new_set(elements.union(other).map(Object::clone).collect())
-        }
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Object::new_set(elements.union(other).map(Object::clone).collect()),
 
         // Concat tuples
-        (Object::Tuple {..}, Object::Tuple {..}) => {
+        (Object::Tuple { .. }, Object::Tuple { .. }) => {
             Object::new_tuple(vec![left.inner_tuple(), right.inner_tuple()].concat())
         }
 
@@ -61,7 +63,11 @@ fn op_add(left: &Object, right: &Object) -> Object {
             Object::new_string(new_str)
         }
 
-        _ => panic!("Cannot add or union types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot add or union types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -74,11 +80,18 @@ fn op_subtract(left: &Object, right: &Object) -> Object {
         (Object::Float(left), Object::Int(right)) => Object::Float(left - *right as f64),
 
         // Set difference
-        (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
-            Object::new_set(elements.difference(other).map(Object::clone).collect())
-        }
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Object::new_set(elements.difference(other).map(Object::clone).collect()),
 
-        _ => panic!("Cannot subtract types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot subtract types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -100,24 +113,39 @@ fn op_multiply(left: &Object, right: &Object) -> Object {
         (Object::Int(x), Object::Tuple { elements, .. })
         | (Object::Tuple { elements, .. }, Object::Int(x)) => {
             let capacity = *x as usize * elements.len();
-            let new_elements: Vec<_> = elements.iter().cycle().take(capacity).map(Object::clone).collect();
+            let new_elements: Vec<_> = elements
+                .iter()
+                .cycle()
+                .take(capacity)
+                .map(Object::clone)
+                .collect();
             Object::new_tuple(new_elements)
         }
 
         // Set intersection
-        (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
-            Object::new_set(elements.intersection(other).map(Object::clone).collect())
-        }
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Object::new_set(elements.intersection(other).map(Object::clone).collect()),
 
         // Tuple zip
-        (Object::Tuple {..}, Object::Tuple {..}) => {
-            let zipped_elements: Vec<_> = left.inner_tuple().into_iter().zip(right.inner_tuple()).map(|(l, r)|
-                Object::new_tuple(vec![l, r])
-            ).collect();
+        (Object::Tuple { .. }, Object::Tuple { .. }) => {
+            let zipped_elements: Vec<_> = left
+                .inner_tuple()
+                .into_iter()
+                .zip(right.inner_tuple())
+                .map(|(l, r)| Object::new_tuple(vec![l, r]))
+                .collect();
             Object::new_tuple(zipped_elements)
         }
 
-        _ => panic!("Cannot multiply or intersect types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot multiply or intersect types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -131,7 +159,11 @@ fn op_divide(left: &Object, right: &Object) -> Object {
         (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 / right),
         (Object::Float(left), Object::Int(right)) => Object::Float(left / *right as f64),
 
-        _ => panic!("Cannot divide types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot divide types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -145,7 +177,11 @@ fn op_modulus(left: &Object, right: &Object) -> Object {
         (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 % right),
         (Object::Float(left), Object::Int(right)) => Object::Float(left % *right as f64),
 
-        _ => panic!("Cannot divide types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot divide types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -157,12 +193,16 @@ fn op_exponentiation(left: &Object, right: &Object) -> Object {
             } else {
                 Object::Int(left.pow(*right as u32))
             }
-        },
+        }
         (Object::Float(left), Object::Float(right)) => Object::Float(left.powf(*right)),
         (Object::Int(left), Object::Float(right)) => Object::Float((*left as f64).powf(*right)),
         (Object::Float(left), Object::Int(right)) => Object::Float(left.powf(*right as f64)),
 
-        _ => panic!("Cannot divide types {} and {}", left.to_debug_string(), right.to_debug_string()),
+        _ => panic!(
+            "Cannot divide types {} and {}",
+            left.to_debug_string(),
+            right.to_debug_string()
+        ),
     }
 }
 
@@ -179,6 +219,7 @@ fn op_less_than_or_eq(left: &Object, right: &Object) -> Object {
 }
 
 #[cfg(test)]
+#[rustfmt::skip]
 mod tests {
     use crate::{object::object::{Object, PreOps}, op::{self, Op}};
     use super::execute_binop;
