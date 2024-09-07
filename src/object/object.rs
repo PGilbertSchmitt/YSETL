@@ -24,6 +24,8 @@ pub trait ObjectOps {
     fn truthy_convert(&self) -> Self;
     fn inner_int(&self) -> i64;
     fn inner_fn(&self) -> (Executor, usize, usize);
+    fn inner_tuple(&self) -> Vec<Object>;
+    fn is_zero(&self) -> bool;
 
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self;
 
@@ -182,6 +184,15 @@ impl ObjectOps for Object {
         }
     }
 
+    fn inner_tuple(&self) -> Vec<Object> {
+        match &self {
+            &Object::Tuple { elements, .. } => {
+                (*elements.clone()).clone()
+            }
+            _ => panic!("Could not convert {self:?} into a vector"),
+        }
+    }
+
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self {
         let inclusive = flag & INCL_BIT != 0;
         let elements: Vec<Object> = if range_start <= range_end {
@@ -205,6 +216,14 @@ impl ObjectOps for Object {
             Object::new_set_from_vec(elements)
         } else {
             Object::new_tuple(elements)
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        match self {
+            Object::Int(0) => true,
+            Object::Float(0.0) => true,
+            _ => false,
         }
     }
 

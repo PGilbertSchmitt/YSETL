@@ -385,7 +385,7 @@ impl VM {
                 | op::GTEQ => {
                     let right = self.stack.pop_one();
                     let left = self.stack.pop_one();
-                    self.stack.push(execute_binop(op, left, right))
+                    self.stack.push(execute_binop(op, &left, &right))
                 }
 
                 // Prefix Operations

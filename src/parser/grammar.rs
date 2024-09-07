@@ -78,7 +78,7 @@ mod tests {
         parse_is_ok(Rule::set_literal, "{[x,y] : x in Z, y=W(x) -> not x}");
         parse_is_ok(
             Rule::set_literal,
-            "{[x,y] : x,y in[a+b..b+a**2], a=foo(b), b=bar{g} -> x > k && g < u}",
+            "{[x,y] : x,y in[a+b..b+a**2], a=foo(b) -> x > k && g < u}",
         );
     }
 

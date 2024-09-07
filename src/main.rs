@@ -22,13 +22,8 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "
-Tup = [1..5];
-foo = (b) => {
-    mod = (x) => x % 2 == (if b ? 0 : 1);
-    [y*10 : y in Tup -> mod(y)]
-};
-print foo(true);
-print foo(false);
+A = [1..4];
+print [9,8,7] + A;
     ",
     );
     let comp = Compiler::new();
