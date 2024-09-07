@@ -28,7 +28,7 @@ Examples:
 |`/`|Division of numbers, evaluates to float if either values are floats, otherwise evaluates to int| |
 |`?`|Modulus operation (both operands must be integers)| ✔ |
 |`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| |
-|`**`|Exponentiation| |
+|`**`|Exponentiation. Evaluates to a float, unless both operands are integers AND the power is positive.| ✔ |
 |`&`|Bitwise AND| |
 |`\|`|Bitwise OR| |
 |`^`|Bitwise XOR| |

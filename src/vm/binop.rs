@@ -17,8 +17,12 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
         op::MULT => op_multiply(left, right),
         op::DIV => op_divide(left, right),
         op::MOD => op_modulus(left, right),
+        op::EXP => op_exponentiation(left, right),
+        op::LT => op_less_than(left, right),
+        op::LTEQ => op_less_than_or_eq(left, right),
+        op::GT => op_less_than(right, left),
+        op::GTEQ => op_less_than_or_eq(right, left),
         op::TAKE => todo!(),
-        op::EXP => todo!(),
         op::WITH_BIT_LEFT => todo!(),
         op::LESS_BIT_RIGHT => todo!(),
         op::BIT_AND => todo!(),
@@ -27,10 +31,6 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Object {
         op::IN => todo!(),
         op::NOTIN => todo!(),
         op::SUBSET => todo!(),
-        op::LT => op_less_than(left, right),
-        op::LTEQ => op_less_than_or_eq(left, right),
-        op::GT => op_less_than(right, left),
-        op::GTEQ => op_less_than_or_eq(right, left),
         op::LOGICAL_IMPL => todo!(),
         _ => unreachable!(),
     }
@@ -84,7 +84,7 @@ fn op_subtract(left: &Object, right: &Object) -> Object {
 
 fn op_multiply(left: &Object, right: &Object) -> Object {
     match (left, right) {
-        // Multiplying numbers    
+        // Multiplying numbers
         (Object::Int(left), Object::Int(right)) => Object::Int(left * right),
         (Object::Float(left), Object::Float(right)) => Object::Float(left * right),
         (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 * right),
@@ -126,7 +126,6 @@ fn op_divide(left: &Object, right: &Object) -> Object {
         panic!("Divide by zero error");
     }
     match (left, right) {
-        // Multiplying numbers    
         (Object::Int(left), Object::Int(right)) => Object::Int(left / right),
         (Object::Float(left), Object::Float(right)) => Object::Float(left / right),
         (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 / right),
@@ -141,11 +140,27 @@ fn op_modulus(left: &Object, right: &Object) -> Object {
         panic!("Divide by zero error");
     }
     match (left, right) {
-        // Multiplying numbers    
         (Object::Int(left), Object::Int(right)) => Object::Int(left % right),
         (Object::Float(left), Object::Float(right)) => Object::Float(left % right),
         (Object::Int(left), Object::Float(right)) => Object::Float(*left as f64 % right),
         (Object::Float(left), Object::Int(right)) => Object::Float(left % *right as f64),
+
+        _ => panic!("Cannot divide types {} and {}", left.to_debug_string(), right.to_debug_string()),
+    }
+}
+
+fn op_exponentiation(left: &Object, right: &Object) -> Object {
+    match (left, right) {
+        (Object::Int(left), Object::Int(right)) => {
+            if *right < 0 {
+                Object::Float((*left as f64).powf(*right as f64))
+            } else {
+                Object::Int(left.pow(*right as u32))
+            }
+        },
+        (Object::Float(left), Object::Float(right)) => Object::Float(left.powf(*right)),
+        (Object::Int(left), Object::Float(right)) => Object::Float((*left as f64).powf(*right)),
+        (Object::Float(left), Object::Int(right)) => Object::Float(left.powf(*right as f64)),
 
         _ => panic!("Cannot divide types {} and {}", left.to_debug_string(), right.to_debug_string()),
     }
@@ -165,7 +180,7 @@ fn op_less_than_or_eq(left: &Object, right: &Object) -> Object {
 
 #[cfg(test)]
 mod tests {
-    use crate::{object::object::Object, op::{self, Op}};
+    use crate::{object::object::{Object, PreOps}, op::{self, Op}};
     use super::execute_binop;
     type TestCase<'a> = (&'a Object, &'a Object, Object);
     type TestCases<'a> = Vec<TestCase<'a>>;
@@ -174,6 +189,8 @@ mod tests {
     const THREE_INT: Object = Object::Int(3);
     const FIVE_INT: Object = Object::Int(5);
     const EIGHT_INT: Object = Object::Int(8);
+
+    const THREE_FLOAT: Object = Object::Float(3.0);
     const FIVE_FLOAT: Object = Object::Float(5.0);
     const EIGHT_FLOAT: Object = Object::Float(8.0);
 
@@ -297,6 +314,21 @@ mod tests {
     #[should_panic]
     fn test_division_mod_by_zero() {
         assert_case(op::MOD, &FIVE_INT, &ZERO_INT, Object::Int(0));
+    }
+
+    #[test]
+    fn test_exponentiation() {
+        assert_cases(op::EXP, vec![
+            (&FIVE_INT, &THREE_INT, Object::Int(125)),
+            (&FIVE_INT, &THREE_FLOAT, Object::Float(125.0)),
+            (&FIVE_FLOAT, &THREE_INT, Object::Float(125.0)),
+            (&FIVE_FLOAT, &THREE_FLOAT, Object::Float(125.0)),
+
+            (&FIVE_INT, &THREE_INT.negate(), Object::Float(0.008)),
+            (&FIVE_INT, &THREE_FLOAT.negate(), Object::Float(0.008)),
+            (&FIVE_FLOAT, &THREE_INT.negate(), Object::Float(0.008)),
+            (&FIVE_FLOAT, &THREE_FLOAT.negate(), Object::Float(0.008)),
+        ]);
     }
 
     #[test]
