@@ -1,13 +1,17 @@
 use std::rc::Rc;
 
 use super::binop::execute_binop;
-use super::frame::Frame;
+use super::frame::{Collector, Frame};
 use super::preop::execute_pre_op;
 use bytes::Bytes;
 
-use crate::compiler::bytecode::{Bytecode, STEP_BIT, TUP_BASE};
+use crate::compiler::bytecode::flags::RED_OP_BIT;
+use crate::compiler::bytecode::{
+    flags::{SET_BASE, STEP_BIT, TUP_BASE},
+    Bytecode,
+};
 use crate::object::object::{Atom, Executor, Object, ObjectOps};
-use crate::op;
+use crate::op::{self, lookup};
 
 const MAX_STACK_SIZE: usize = 4096;
 
@@ -271,13 +275,37 @@ impl VM {
                 op::ITER_START => {
                     let iter_idx = Self::read_u16(&ins, i_ptr);
                     let locked_param_count = Self::read_u16(&ins, i_ptr + 2) as usize;
-                    let type_flag = ins[i_ptr + 4];
-                    i_ptr += 5;
+                    let collection_count = ins[i_ptr + 4] as usize;
+                    let type_flag = ins[i_ptr + 5];
+                    i_ptr += 6;
+
                     let params_start = self.stack.len() - locked_param_count;
                     let iterator = &self.base_iterators[iter_idx as usize];
                     let closed_values = Rc::new(self.stack.drain(params_start..).collect());
-                    let base_pointer = self.stack.len();
+                    let collections_start = params_start - collection_count;
+                    let collections = self.stack.drain(collections_start..).collect();
 
+                    let mut reducer: Option<Object> = None;
+                    let collector = if type_flag & TUP_BASE != 0 {
+                        Collector::new_tuple()
+                    } else if type_flag & SET_BASE != 0 {
+                        Collector::new_set()
+                    } else {
+                        // In this situation, the initial accumulator will be on the top of the stack. If the reducer
+                        // is an expression reducer, there will also be a reducer function under the initial accumulator.
+                        // The op-based reducer will only have the accumulator.
+                        let init = self.stack.pop_one();
+                        if type_flag & RED_OP_BIT == 0 {
+                            let reducer_fn = self.stack.pop_one();
+                            if !reducer_fn.can_reduce() {
+                                panic!("Provided reducer has incorrect param counts");
+                            }
+                            reducer = Some(reducer_fn);
+                        }
+                        Collector::Accum(init)
+                    };
+
+                    let base_pointer = self.stack.len();
                     // Space for the locals to exist on the stack
                     for _ in 0..iterator.num_locals {
                         self.stack.push(self.null_ref.clone());
@@ -288,10 +316,40 @@ impl VM {
                         i_ptr,
                         base_pointer,
                         closed_values,
-                        type_flag == TUP_BASE,
+                        &collections,
+                        collector,
+                        reducer,
                     ));
                     ins = iterator.ins.clone();
                     i_ptr = 0;
+                }
+
+                op::GET_ACC => {
+                    self.stack.push(self.frame().get_collection());
+                }
+
+                op::REDUCE_CALL => {
+                    let reducer = self.frame().get_reducer();
+                    let (executor, ..) = reducer.inner_fn();
+                    let stack_base = self.stack.len() - 2;
+                    self.frames.push(Frame::new_as_func(
+                        executor.ins.clone(),
+                        i_ptr,
+                        stack_base,
+                        // This could be an option, but it's already kinda unweildy
+                        Rc::new(Vec::new()),
+                    ));
+                    ins = executor.ins;
+                    i_ptr = 0;
+                }
+
+                op::REDUCE_WITH => {
+                    let op = ins[i_ptr];
+                    i_ptr += 1;
+                    let right = self.stack.pop_one();
+                    let left = self.stack.pop_one();
+                    self.frame_mut()
+                        .iter_collect(execute_binop(op, &left, &right).unwrap());
                 }
 
                 op::ITER_NEXT => {
@@ -302,7 +360,7 @@ impl VM {
                         i_ptr = jmp_ptr;
                     } else {
                         i_ptr += 5;
-                    }
+                    };
                 }
 
                 op::ITER_COLLECT => {
@@ -315,16 +373,11 @@ impl VM {
                     ins = self.frame().ins.clone();
                     i_ptr = last_frame.return_ptr;
                     self.stack.truncate(last_frame.stack_base); // Remove local vars
-                    self.stack.push(last_frame.collector());
-                }
-
-                op::MAKE_ITER => {
-                    let collection = self.stack.pop_one();
-                    self.frame_mut().make_iter(&collection);
+                    self.stack.push(last_frame.into_collector());
                 }
 
                 op::DUP_ITER => {
-                    self.frame_mut().dup_iter();
+                    self.stack.push(self.stack.last().unwrap().clone());
                 }
 
                 op::GET_ITER_VAL => {
@@ -344,7 +397,7 @@ impl VM {
                     i_ptr += 4;
                     if self.frame().any_iter_empty() {
                         i_ptr = jump_pos as usize;
-                    }
+                    };
                 }
 
                 op::PRINT => {
@@ -385,20 +438,24 @@ impl VM {
                 | op::GTEQ => {
                     let right = self.stack.pop_one();
                     let left = self.stack.pop_one();
-                    self.stack.push(execute_binop(op, &left, &right).unwrap())
+                    self.stack.push(execute_binop(op, &left, &right).unwrap());
                 }
 
                 // Prefix Operations
                 op::NOT | op::NEGATE | op::SIZE | op::HEAD | op::LAST | op::TAIL | op::INIT => {
                     let right = self.stack.pop_one();
-                    self.stack.push(execute_pre_op(op, right))
+                    self.stack.push(execute_pre_op(op, right));
                 }
 
                 op::DBG_PRINT_STACK_TOP => {
-                    println!("Top of stack: {}", self.stack.last().unwrap().to_s())
+                    println!("Top of stack: {}", self.stack.last().unwrap().to_s());
                 }
 
-                _ => panic!("Still need to implement op {op}"),
+                _ => {
+                    println!("Still need to implement op {op}. Attempting lookup:");
+                    let (name, widths) = lookup(op);
+                    println!("Lookup value: {name} [{widths:?}]");
+                }
             }
         }
     }

@@ -59,6 +59,7 @@ l_paren    = _{ "(" }
 r_paren    = _{ ")" }
 l_brack    = _{ "[" }
 r_brack    = _{ "]" }
+reduce     = _{ "%" }
 arrow      = _{ "->" }
 fat_arrow  = _{ "=>" }
 tall_arrow = _{ "|>" }
@@ -118,8 +119,14 @@ prefix_op = _{
   | kw_not
 }
 
+reduce_op = { reduce ~ (ident | nested_expr | binary_op) }
+
+infix_inject_op = { dot ~ (ident | nested_expr) }
+
 // Precedence is handled by the PRATT_PARSER in the `./parser.rs` file
 binary_op = _{
+  | reduce_op
+  | infix_inject_op
   | dbl_qst
   | dbl_star
   | dbl_lt

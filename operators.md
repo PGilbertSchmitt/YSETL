@@ -26,7 +26,7 @@ Examples:
 |`-`|Subtraction of numbers; Difference of sets| ✔ |
 |`*`|Multiplication of numbers; Intersection of sets; Zip tuples; If used between an integer and a string/tuple, the collection is repeated an amount of times equal to the integer. If the number is zero, it returns the empty string/tuple.| ✔ |
 |`/`|Division of numbers, evaluates to float if either values are floats, otherwise evaluates to int| ✔ |
-|`?`|Modulus operation (both operands must be integers)| ✔ |
+|`?`|Modulus operation (both operands must be integers or floats)| ✔ |
 |`@`|Take operator. First operand must be an integer, and the second must be a tuple. The integer selects the index of the first element in the new tuple, eg `2 @ [10..100]` produces `[12, 13, ..., 99, 100]`. Negative numbers operate relative to the end, eg. `-2 @ [10..100]` produces `[10, 11, ..., 97, 98]`| ✔ |
 |`**`|Exponentiation. Evaluates to a float, unless both operands are integers AND the power is positive.| ✔ |
 |`&`|Bitwise AND; Alternative set intersection| ✔ |
@@ -34,11 +34,11 @@ Examples:
 |`^`|Bitwise XOR| ✔ |
 |`<<`|If the first operand is a set, it returns a set with the second value inserted. If the first operand is a tuple, it returns a tuple with the second value pushed to the end. If both operands are integers, performs a bitwise left shift.| ✔ |
 |`>>`|If the first operand is a set, it returns a set with the second value removed. If the first operand is a tuple, it returns a tuple with the second value pushed to the front. If both operands are integers, performs a bitwise right shift.| ✔ |
-|`&&`|Logical conjunction| ✔ |
-|`\|\|`|Logical disjunction| ✔ |
-|`??`|Null coelescing| ✔ |
-|`%(expr)`/`%ident`|Reducer. Given the form `X %(expr) Y`, `Y` must evaluate to a collection. The `expr` must evaluate to a binary function. `X` is the initial accululator| |
-|`.(expr)`/`.ident`|Passes the 2 operands into the results of expr, as long as expr evaluates to a binary function. Equivalent to (expr)(X, Y)| |
+|`&&`|Logical conjunction. This operator short circuits, so if the first operand evaluates to truthy, the second operand will not be evaluated.| ✔ |
+|`\|\|`|Logical disjunction. This operator short circuits, so if the first operand evaluates to falsy, the second operand will not be evaluated.| ✔ |
+|`??`|Null coelescing. This operator short circuits, so if the first operand is not null, the second operand will not be evaluated.| ✔ |
+|`%(expr)`/`%ident`|Reducer. Given the form `X %(expr) Y`, `Y` must evaluate to a collection. The `expr` must evaluate to a binary function. `X` is the initial accululator| ✔ |
+|`.(expr)`/`.ident`|Passes the 2 operands into the results of expr, as long as expr evaluates to a binary function. Equivalent to (expr)(X, Y)| ✔ |
 |`in`|Test for membership in a collection| ✔ |
 |`notin`|Negative form of infix `in`| ✔ |
 |`subset`|Test that the first operand is a subset of the second operand (both operands must be sets)| ✔ |

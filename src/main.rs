@@ -21,9 +21,16 @@ pub fn print_structure(rule: Rule, input: &str) {
 
 fn main() {
     let ast = parse_program(
-        "
-A = [1..4];
-print [9,8,7] + A;
+        "\
+A = {1..5};
+B = {70, 80, 90, 100};
+add = (a, b) => a + b;
+min = (a, b) => if a < b ? a : b;
+max = (a, b) => if a > b ? a : b;
+print 1 %* A;
+print 0 %+ B;
+print ^B %min B;
+print ^B %max B;
     ",
     );
     let comp = Compiler::new();

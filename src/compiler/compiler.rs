@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::u32;
 
-use super::bytecode::{Bytecode, INCL_BIT, SET_BASE, STEP_BIT, TUP_BASE};
+use super::bytecode::flags::{INCL_BIT, RED_BASE, RED_OP_BIT, SET_BASE, STEP_BIT, TUP_BASE};
+use super::bytecode::Bytecode;
 use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 
 use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
-    BinOp, Bound, BoundList, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp,
-    SingleIterator, Stmt, StmtList, StmtListWithCapture,
+    BinOp, Bound, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp, SingleIterator, Stmt,
+    StmtList, StmtListWithCapture,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -261,6 +263,69 @@ impl Compiler {
                 self.emit_with_u16_u16(op::MAKE_FN, const_ptr, locked_sym_count as u16);
                 self.emit_with_u16(op::CALL, 0);
             }
+            Expr::ReduceOp { op, lhs, rhs } => {
+                self.compile_expr(*lhs); // Initial accumulator left on stack
+                self.compile_expr(*rhs); // Single iteration collection left on stack
+
+                // TODO: Basically everything from here can be converted into a pre-compiled
+                //iterator, since the inside is always the same thing.
+                self.scopes.enter_scope();
+                // The indexes and jump pointers are always the same
+                self.emit_with_u32(op::ITER_EMPTY_CHECK, 15);
+                self.emit(op::GET_ACC);
+                self.emit_with_u8(op::GET_ITER_VAL, 0);
+                // An operator as an operand!?
+                self.emit_with_u8(op::REDUCE_WITH, from_binop(op));
+                self.emit_with_u8_u32(op::ITER_NEXT, 0, 5);
+                self.emit(op::ITER_END);
+
+                let (ins, _, _) = self.scopes.exit_scope();
+                let global_iter_idx = self.iterators.len() as u16;
+                self.iterators.push(Executor {
+                    ins,
+                    num_locals: 0,
+                    locked_values: Rc::new(Vec::new()),
+                });
+                self.emit_with_u16_u16_u8_u8(
+                    op::ITER_START,
+                    global_iter_idx,
+                    0,
+                    1,
+                    RED_BASE | RED_OP_BIT,
+                );
+            }
+            Expr::ReduceExpr { reducer, lhs, rhs } => {
+                self.compile_expr(*reducer); // Reducer left on stack
+                self.compile_expr(*lhs); // Initial accumulator left on stack
+                self.compile_expr(*rhs); // Single iteration collection left on stack
+
+                // TODO: Basically everything from here can be converted into a pre-compiled
+                //iterator, since the inside is always the same thing.
+                self.scopes.enter_scope();
+                // The indexes and jump pointers are always the same
+                self.emit_with_u32(op::ITER_EMPTY_CHECK, 15);
+                self.emit(op::GET_ACC);
+                self.emit_with_u8(op::GET_ITER_VAL, 0);
+                self.emit(op::REDUCE_CALL);
+                self.emit(op::ITER_COLLECT);
+                self.emit_with_u8_u32(op::ITER_NEXT, 0, 5);
+                self.emit(op::ITER_END);
+
+                let (ins, _, _) = self.scopes.exit_scope();
+                let global_iter_idx = self.iterators.len() as u16;
+                self.iterators.push(Executor {
+                    ins,
+                    num_locals: 0,
+                    locked_values: Rc::new(Vec::new()),
+                });
+                self.emit_with_u16_u16_u8_u8(op::ITER_START, global_iter_idx, 0, 1, RED_BASE);
+            }
+            Expr::Inject { injector, lhs, rhs } => {
+                self.compile_expr(*injector);
+                self.compile_expr(*lhs);
+                self.compile_expr(*rhs);
+                self.emit_with_u16(op::CALL, 2);
+            }
         };
     }
 
@@ -352,7 +417,6 @@ impl Compiler {
         iteration_start_ptr: u32,
         empty_check_ptr: usize,
     ) {
-        // Iterators are processed in reverse
         for (idx, _) in iter_vars.iter().enumerate().rev() {
             self.emit_with_u8_u32(op::ITER_NEXT, idx as u8, iteration_start_ptr);
         }
@@ -362,33 +426,76 @@ impl Compiler {
     fn compile_iterator_start(
         &mut self,
         iterator: Iterator,
-    ) -> (Vec<IterVar>, Option<Box<Expr>>, usize, usize) {
-        self.scopes.enter_scope();
+    ) -> (Vec<IterVar>, Option<Box<Expr>>, usize, usize, u8) {
         let Iterator { iterators, filter } = iterator;
         if iterators.len() > 255 {
             panic!("Cannot support an iterator with more than 255 members")
         };
+
+        // In the scope before we initiate the iterator, we can compile the collections
+        // used for the iterators:
+
+        let mut collection_count: u8 = 0;
+        // This line is kinda funny if you think about it, and also a nightmare. We need to iterate
+        // over the iterators BEFORE entering scope to compile the collection expressions
+        // and potentially duplicate them on the stack for multi-bound iterators.
+        let iters_only_bounds: Vec<_> = iterators
+            .into_iter()
+            .map(|single_iter| {
+                collection_count += 1;
+                match single_iter {
+                    SingleIterator::In { expr, bounds } => {
+                        self.compile_expr(expr);
+                        for _ in 1..bounds.len() {
+                            collection_count += 1;
+                            self.emit(op::DUP_ITER);
+                        }
+                        SingleIterator::In {
+                            bounds,
+                            expr: Expr::Null,
+                        }
+                    }
+                    SingleIterator::Select {
+                        collection,
+                        key,
+                        value,
+                        ..
+                    } => {
+                        let collection_sym = self
+                            .scopes
+                            .lookup_sym(&collection)
+                            .expect("Key-Value iterator must be an initialized variable");
+                        self.load_symbol_on_stack(collection_sym);
+                        SingleIterator::Select {
+                            collection: String::new(),
+                            key,
+                            value,
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        self.scopes.enter_scope();
+
+        // Now we need to iterate over the iterators again AFTER we enter a new scope so that
+        // we can register the bounds where they will be evaluated.
         let mut iter_vars: Vec<IterVar> = vec![];
-        // This line is kinda funny if you think about it, and also a nightmare
-        iterators
+        iters_only_bounds
             .into_iter()
             .for_each(|single_iter| match single_iter {
-                SingleIterator::In { bounds, expr } => {
-                    let bound_count: u8 = bounds
-                        .len()
-                        .try_into()
-                        .expect("Cannot support an iterator with more than 255 bounds");
-                    self.compile_value_iterator(bounds, expr);
-                    for _ in 0..bound_count {
+                SingleIterator::In { bounds, .. } => {
+                    if bounds.len() > u8::MAX as usize {
+                        panic!("Cannot support an iterator with more than 255 bounds");
+                    }
+                    for bound in bounds.into_iter() {
+                        self.register_bound(bound);
                         iter_vars.push(IterVar::Value);
                     }
                 }
-                SingleIterator::Select {
-                    collection,
-                    key,
-                    value,
-                } => {
-                    self.compile_key_value_iterator(collection, key, value);
+                SingleIterator::Select { key, value, .. } => {
+                    self.register_bound(value);
+                    self.register_bound(key);
                     iter_vars.push(IterVar::KeyAndValue);
                 }
             });
@@ -400,10 +507,16 @@ impl Compiler {
         self.emit_with_u32(op::ITER_EMPTY_CHECK, u32::MAX);
         let iteration_start_ptr = self.compile_iterator_symbol_loader(&iter_vars);
 
-        (iter_vars, filter, empty_check_ptr, iteration_start_ptr)
+        (
+            iter_vars,
+            filter,
+            empty_check_ptr,
+            iteration_start_ptr,
+            collection_count,
+        )
     }
 
-    fn compile_iterator_end(&mut self, flag_base: u8) {
+    fn compile_iterator_end(&mut self, collection_count: u8, flag_base: u8) {
         let (ins, symbol_count, locked_symbols) = self.scopes.exit_scope();
 
         let locked_sym_count = locked_symbols.len() as u16;
@@ -418,11 +531,17 @@ impl Compiler {
             locked_values: Rc::new(Vec::new()),
         });
 
-        self.emit_with_u16_u16_u8(op::ITER_START, global_iter_idx, locked_sym_count, flag_base);
+        self.emit_with_u16_u16_u8_u8(
+            op::ITER_START,
+            global_iter_idx,
+            locked_sym_count,
+            collection_count,
+            flag_base,
+        );
     }
 
     fn compile_select_iterator(&mut self, select_op: SelectOp, iterator: Iterator) {
-        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr) =
+        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr, collection_count) =
             self.compile_iterator_start(iterator);
         let jump_ptr_dest = self.compile_iterator_filter(
             filter,
@@ -454,8 +573,8 @@ impl Compiler {
                             self.emit_with_u8(op::GET_ITER_VAL, idx as u8);
                         }
                         IterVar::KeyAndValue => {
-                            self.emit_with_u8(op::GET_ITER_KEY, idx as u8);
                             self.emit_with_u8(op::GET_ITER_VAL, idx as u8);
+                            self.emit_with_u8(op::GET_ITER_KEY, idx as u8);
                             self.emit_with_u8_u16(op::MAKE_LIT_COL, TUP_BASE, 2);
                         }
                     });
@@ -489,11 +608,11 @@ impl Compiler {
                 self.emit(op::RETURN);
             }
         }
-        self.compile_iterator_end(TUP_BASE);
+        self.compile_iterator_end(collection_count, TUP_BASE);
     }
 
     fn compile_iterator_former(&mut self, eval: Expr, iterator: Iterator, flag_base: u8) {
-        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr) =
+        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr, collection_count) =
             self.compile_iterator_start(iterator);
         let jump_ptr_dest = self.compile_iterator_filter(filter, op::JUMP_IF_FALSE);
 
@@ -508,36 +627,7 @@ impl Compiler {
 
         self.compile_iterator_nexts(&iter_vars, iteration_start_ptr as u32, empty_check_ptr);
         self.emit(op::ITER_END);
-        self.compile_iterator_end(flag_base);
-    }
-
-    fn compile_value_iterator(&mut self, bounds: BoundList, collection: Expr) {
-        self.compile_expr(collection);
-
-        for (idx, bound) in bounds.into_iter().enumerate() {
-            self.emit(if idx == 0 {
-                op::MAKE_ITER
-            } else {
-                op::DUP_ITER
-            });
-            self.register_bound(bound.clone());
-        }
-    }
-
-    fn compile_key_value_iterator(
-        &mut self,
-        collection: String,
-        key_bound: Bound,
-        value_bound: Bound,
-    ) {
-        let collection_sym = self
-            .scopes
-            .lookup_sym(&collection)
-            .expect("Key-Value iterator must be an initialized variable");
-        self.load_symbol_on_stack(collection_sym);
-        self.emit(op::MAKE_ITER);
-        self.register_bound(key_bound);
-        self.register_bound(value_bound);
+        self.compile_iterator_end(collection_count, flag_base);
     }
 
     fn register_bound(&mut self, bound: Bound) {
@@ -598,11 +688,20 @@ impl Compiler {
         self.last_ins().put_u16(operand_2);
     }
 
-    fn emit_with_u16_u16_u8(&mut self, code: Op, operand_1: u16, operand_2: u16, operand_3: u8) {
+    // I need something better than this...
+    fn emit_with_u16_u16_u8_u8(
+        &mut self,
+        code: Op,
+        operand_1: u16,
+        operand_2: u16,
+        operand_3: u8,
+        operand_4: u8,
+    ) {
         self.emit(code);
         self.last_ins().put_u16(operand_1);
         self.last_ins().put_u16(operand_2);
         self.last_ins().put_u8(operand_3);
+        self.last_ins().put_u8(operand_4);
     }
 
     fn emit_with_u16(&mut self, code: Op, operand: u16) {

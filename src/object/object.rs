@@ -9,7 +9,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::compiler::bytecode::{INCL_BIT, TUP_BASE};
+use crate::compiler::bytecode::flags::{INCL_BIT, TUP_BASE};
 
 #[derive(Debug, Clone)]
 pub enum IterKind {
@@ -24,6 +24,7 @@ pub trait ObjectOps {
     fn truthy_convert(&self) -> Self;
     fn inner_int(&self) -> i64;
     fn inner_fn(&self) -> (Executor, usize, usize);
+    fn can_reduce(&self) -> bool;
     fn inner_tuple(&self) -> Vec<Object>;
     fn inner_set(&self) -> HashSet<Object>;
     fn is_zero(&self) -> bool;
@@ -182,7 +183,19 @@ impl ObjectOps for Object {
                     inner.num_opt_params,
                 )
             }
-            _ => panic!("Could not convert {self:?} into a function"),
+            _ => panic!("Could not interpret {self:?} as a function"),
+        }
+    }
+
+    // Hyper specific, but better here than in the VM
+    fn can_reduce(&self) -> bool {
+        match &self {
+            &Object::Closure { inner, .. } => {
+                let min = inner.num_req_params;
+                let max = min + inner.num_opt_params;
+                min <= 2 && 2 <= max
+            }
+            _ => panic!("Could not interpret {self:?} as a function"),
         }
     }
 
@@ -309,11 +322,12 @@ impl ObjectOps for Object {
 impl FrameOps for Object {
     fn to_vec(&self) -> Vec<Object> {
         match &self {
-            &Object::Tuple { elements, .. } => elements.to_vec(),
-            &Object::String { value, .. } => value
+            Object::Tuple { elements, .. } => elements.to_vec(),
+            Object::String { value, .. } => value
                 .split("")
                 .map(|str| Object::new_string(str.to_owned()))
                 .collect(),
+            Object::Set { elements, .. } => elements.iter().map(Object::clone).collect(),
             _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
         }
     }
@@ -322,6 +336,7 @@ impl FrameOps for Object {
         match &self {
             &Object::Tuple { .. } => IterKind::Tuple,
             &Object::String { .. } => IterKind::String,
+            &Object::Set { .. } => IterKind::Set,
             _ => unimplemented!(),
         }
     }

@@ -141,6 +141,21 @@ pub enum Expr {
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
+    ReduceOp {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    ReduceExpr {
+        reducer: Box<Expr>,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Inject {
+        injector: Box<Expr>,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
     Prefix {
         op: PreOp,
         rhs: Box<Expr>,

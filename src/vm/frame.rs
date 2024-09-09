@@ -44,6 +44,7 @@ impl IterCollection {
 pub enum Collector {
     Tuple(Vec<Object>),
     Set(HashSet<Object>),
+    Accum(Object),
 }
 
 impl Collector {
@@ -59,6 +60,7 @@ impl Collector {
         match self {
             Self::Tuple(vec) => vec.len(),
             Self::Set(set) => set.len(),
+            Self::Accum(_) => 1,
         }
     }
 
@@ -68,6 +70,7 @@ impl Collector {
             Self::Set(s) => {
                 s.insert(obj);
             }
+            Self::Accum(o) => *o = obj,
         }
     }
 }
@@ -76,6 +79,7 @@ impl Collector {
 pub struct YsetlIter {
     collections: Vec<IterCollection>,
     output: Collector,
+    reducer: Option<Object>,
 }
 
 #[derive(Debug)]
@@ -108,7 +112,9 @@ impl Frame {
         return_ptr: usize,
         stack_base: usize,
         closed_values: Rc<Vec<Object>>,
-        as_tuple: bool,
+        collections: &Vec<Object>,
+        collector: Collector,
+        reducer: Option<Object>,
     ) -> Self {
         Self {
             ins,
@@ -116,25 +122,14 @@ impl Frame {
             stack_base,
             closed_values,
             iterator: Some(YsetlIter {
-                collections: Vec::new(),
-                output: if as_tuple {
-                    Collector::new_tuple()
-                } else {
-                    Collector::new_set()
-                },
+                collections: collections
+                    .into_iter()
+                    .map(|c| IterCollection::new(c))
+                    .collect(),
+                output: collector,
+                reducer,
             }),
         }
-    }
-
-    pub fn make_iter(&mut self, obj: &Object) {
-        self.iterator_mut()
-            .collections
-            .push(IterCollection::new(obj))
-    }
-
-    pub fn dup_iter(&mut self) {
-        let collections = &mut self.iterator_mut().collections;
-        collections.push(collections.last().unwrap().clone());
     }
 
     pub fn iter_next(&mut self, iter_idx: usize) -> bool {
@@ -163,8 +158,15 @@ impl Frame {
     pub fn get_iter_key(&self, iter_idx: usize) -> Object {
         let current_iter = self.iterator_at(iter_idx);
         match current_iter.kind {
-            IterKind::Tuple | IterKind::String => current_iter.current_value(),
-            IterKind::Set => Object::Int(current_iter.pos as i64),
+            IterKind::Tuple | IterKind::String => Object::Int(current_iter.pos as i64),
+            IterKind::Set => current_iter.current_value(),
+        }
+    }
+
+    pub fn get_collection(&self) -> Object {
+        match &self.iterator().output {
+            Collector::Accum(o) => o.clone(),
+            _ => unreachable!(),
         }
     }
 
@@ -179,10 +181,11 @@ impl Frame {
             .any(|collection| collection.size == 0)
     }
 
-    pub fn collector(self) -> Object {
+    pub fn into_collector(self) -> Object {
         match self.iterator.unwrap().output {
             Collector::Tuple(v) => Object::new_tuple(v),
             Collector::Set(s) => Object::new_set(s),
+            Collector::Accum(o) => o,
         }
     }
 
@@ -201,6 +204,14 @@ impl Frame {
             println!("\t[{}/{}] {:?}", c.pos, c.size, c.collection);
         });
         println!("}}");
+    }
+
+    pub fn get_reducer(&self) -> Object {
+        self.iterator()
+            .reducer
+            .as_ref()
+            .expect("Tried to reduce without a reducer present")
+            .clone()
     }
 
     fn iterator(&self) -> &YsetlIter {

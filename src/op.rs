@@ -40,11 +40,13 @@ pub const ITER_START: Op = 60;
 pub const ITER_NEXT: Op = 61;
 pub const ITER_COLLECT: Op = 62;
 pub const ITER_END: Op = 63;
-pub const MAKE_ITER: Op = 64;
-pub const DUP_ITER: Op = 65;
-pub const GET_ITER_VAL: Op = 66;
-pub const GET_ITER_KEY: Op = 67;
-pub const ITER_EMPTY_CHECK: Op = 68;
+pub const DUP_ITER: Op = 64;
+pub const GET_ITER_VAL: Op = 65;
+pub const GET_ITER_KEY: Op = 66;
+pub const ITER_EMPTY_CHECK: Op = 67;
+pub const GET_ACC: Op = 68;
+pub const REDUCE_CALL: Op = 69;
+pub const REDUCE_WITH: Op = 70;
 
 // Builtins
 pub const PRINT: Op = 150;
@@ -116,15 +118,17 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         CALL => ("CALL", &[2]),
         RETURN => ("RETURN", &[]),
 
-        ITER_START => ("ITER_START", &[2, 2, 1]),
+        ITER_START => ("ITER_START", &[2, 2, 1, 1]),
         ITER_NEXT => ("ITER_NEXT", &[1, 4]),
         ITER_COLLECT => ("ITER_COLLECT", &[]),
         ITER_END => ("ITER_END", &[]),
-        MAKE_ITER => ("MAKE_ITER", &[]),
         DUP_ITER => ("DUP_ITER", &[]),
         GET_ITER_VAL => ("GET_ITER_VAL", &[1]),
         GET_ITER_KEY => ("GET_ITER_KEY", &[1]),
         ITER_EMPTY_CHECK => ("ITER_EMPTY_CHECK", &[4]),
+        GET_ACC => ("GET_ACC", &[]),
+        REDUCE_CALL => ("REDUCE_CALL", &[]),
+        REDUCE_WITH => ("REDUCE_WITH", &[1]),
 
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),

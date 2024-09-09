@@ -7,7 +7,7 @@
  * there is some duplication of match logic, but this is overall a lot easier for me to manage.
  */
 use crate::object::object::{Object, ObjectOps, PreOps};
-use crate::op::{self, Op};
+use crate::op::{self, lookup, Op};
 
 pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, String> {
     match op {
@@ -31,12 +31,19 @@ pub fn execute_binop(op: Op, left: &Object, right: &Object) -> Result<Object, St
         op::IN => op_in(left, right),
         op::NOTIN => op_notin(left, right),
         op::SUBSET => op_subset(left, right),
-        _ => unreachable!(),
+        _ => {
+            panic!("Tried to execute op {}", lookup(op).0);
+        }
     }
 }
 
 fn op_error(op: &str, left: &Object, right: &Object) -> Result<Object, String> {
-    Err(format!("Cannot perform '{} {} {}'", left.to_debug_string(), op, right.to_debug_string()))
+    Err(format!(
+        "Cannot perform '{} {} {}'",
+        left.to_debug_string(),
+        op,
+        right.to_debug_string()
+    ))
 }
 
 fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
@@ -53,12 +60,14 @@ fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
             Object::Set {
                 elements: other, ..
             },
-        ) => Ok(Object::new_set(elements.union(other).map(Object::clone).collect())),
+        ) => Ok(Object::new_set(
+            elements.union(other).map(Object::clone).collect(),
+        )),
 
         // Concat tuples
-        (Object::Tuple { .. }, Object::Tuple { .. }) => {
-            Ok(Object::new_tuple(vec![left.inner_tuple(), right.inner_tuple()].concat()))
-        }
+        (Object::Tuple { .. }, Object::Tuple { .. }) => Ok(Object::new_tuple(
+            vec![left.inner_tuple(), right.inner_tuple()].concat(),
+        )),
 
         // Concat strings
         (Object::String { value, .. }, Object::String { value: other, .. }) => {
@@ -85,7 +94,9 @@ fn op_subtract(left: &Object, right: &Object) -> Result<Object, String> {
             Object::Set {
                 elements: other, ..
             },
-        ) => Ok(Object::new_set(elements.difference(other).map(Object::clone).collect())),
+        ) => Ok(Object::new_set(
+            elements.difference(other).map(Object::clone).collect(),
+        )),
 
         _ => op_error("-", left, right),
     }
@@ -124,7 +135,9 @@ fn op_multiply(left: &Object, right: &Object) -> Result<Object, String> {
             Object::Set {
                 elements: other, ..
             },
-        ) => Ok(Object::new_set(elements.intersection(other).map(Object::clone).collect())),
+        ) => Ok(Object::new_set(
+            elements.intersection(other).map(Object::clone).collect(),
+        )),
 
         // Tuple zip
         (Object::Tuple { .. }, Object::Tuple { .. }) => {
@@ -206,11 +219,20 @@ fn op_take(left: &Object, right: &Object) -> Result<Object, String> {
     let magnitude: usize = left_value.abs() as usize;
     let get_range = |col_size: usize| {
         if magnitude > col_size {
-            std::ops::Range { start: 0, end: col_size }
+            std::ops::Range {
+                start: 0,
+                end: col_size,
+            }
         } else if left_value.is_negative() {
-            std::ops::Range { start: col_size - magnitude, end: col_size }
+            std::ops::Range {
+                start: col_size - magnitude,
+                end: col_size,
+            }
         } else {
-            std::ops::Range { start: 0, end: magnitude }
+            std::ops::Range {
+                start: 0,
+                end: magnitude,
+            }
         }
     };
 
@@ -218,15 +240,17 @@ fn op_take(left: &Object, right: &Object) -> Result<Object, String> {
         Object::String { value, .. } => {
             let range = get_range(value.len());
             Ok(Object::new_string(value[range].to_owned()))
-        },
+        }
         Object::Tuple { elements, .. } => {
             let range = get_range(elements.len());
-            Ok(Object::new_tuple(elements[range].into_iter().map(Object::clone).collect()))
-        },
+            Ok(Object::new_tuple(
+                elements[range].into_iter().map(Object::clone).collect(),
+            ))
+        }
         Object::Set { elements, .. } => {
             let new_elements: Vec<_> = elements.iter().take(magnitude).map(Object::clone).collect();
             Ok(Object::new_set_from_vec(new_elements))
-        },
+        }
         _ => op_error("@", left, right),
     }
 }
@@ -241,13 +265,20 @@ fn op_in(left: &Object, right: &Object) -> Result<Object, String> {
                     if value.len() == 1 {
                         value.chars().next().unwrap()
                     } else {
-                        return Err(format!("Can only check for membership of single char in a string"));
+                        return Err(format!(
+                            "Can only check for membership of single char in a string"
+                        ));
                     }
                 }
-                _ => return Err(format!("Cannot check for membership of {} in a string", left.to_debug_string())),
+                _ => {
+                    return Err(format!(
+                        "Cannot check for membership of {} in a string",
+                        left.to_debug_string()
+                    ))
+                }
             };
             Ok(Object::Bool(value.contains(char)))
-        },
+        }
         _ => op_error("in", left, right),
     }
 }
@@ -262,9 +293,12 @@ fn op_notin(left: &Object, right: &Object) -> Result<Object, String> {
 
 fn op_subset(left: &Object, right: &Object) -> Result<Object, String> {
     match (left, right) {
-        (Object::Set { elements, .. }, Object::Set { elements: other, .. }) => {
-            Ok(Object::Bool(elements.is_subset(other)))
-        }
+        (
+            Object::Set { elements, .. },
+            Object::Set {
+                elements: other, ..
+            },
+        ) => Ok(Object::Bool(elements.is_subset(other))),
         _ => op_error("subset", left, right),
     }
 }
@@ -280,7 +314,9 @@ fn op_bitwise_and(left: &Object, right: &Object) -> Result<Object, String> {
             Object::Set {
                 elements: other, ..
             },
-        ) => Ok(Object::new_set(elements.intersection(other).map(Object::clone).collect())),
+        ) => Ok(Object::new_set(
+            elements.intersection(other).map(Object::clone).collect(),
+        )),
         _ => op_error("&", left, right),
     }
 }
@@ -296,7 +332,9 @@ fn op_bitwise_or(left: &Object, right: &Object) -> Result<Object, String> {
             Object::Set {
                 elements: other, ..
             },
-        ) => Ok(Object::new_set(elements.union(other).map(Object::clone).collect())),
+        ) => Ok(Object::new_set(
+            elements.union(other).map(Object::clone).collect(),
+        )),
         _ => op_error("|", left, right),
     }
 }
@@ -320,11 +358,13 @@ fn op_with_bitshift_left(left: &Object, right: &Object) -> Result<Object, String
     match (left, right) {
         (Object::Int(x), Object::Int(y)) => {
             if x.is_negative() || y.is_negative() {
-                Err(format!("bitshift operations can't operate on negative integers"))
+                Err(format!(
+                    "bitshift operations can't operate on negative integers"
+                ))
             } else {
                 Ok(Object::Int(x << y))
             }
-        },
+        }
         (Object::Tuple { .. }, _) => {
             let mut new_elements = left.inner_tuple();
             new_elements.push(right.clone());
@@ -343,11 +383,13 @@ fn op_less_bitshift_right(left: &Object, right: &Object) -> Result<Object, Strin
     match (left, right) {
         (Object::Int(x), Object::Int(y)) => {
             if x.is_negative() || y.is_negative() {
-                Err(format!("bitshift operations can't operate on negative integers"))
+                Err(format!(
+                    "bitshift operations can't operate on negative integers"
+                ))
             } else {
                 Ok(Object::Int(x >> y))
             }
-        },
+        }
         (Object::Tuple { .. }, _) => {
             let mut new_elements = left.inner_tuple();
             new_elements.insert(0, right.clone());

@@ -78,14 +78,14 @@ lazy_static::lazy_static! {
                 Op::infix(Rule::gt_eq, Left))
             .op(Op::infix(Rule::dbl_lt, Left) |
                 Op::infix(Rule::dbl_gt, Left))
-            // Infix-injector operator
+            .op(Op::infix(Rule::infix_inject_op, Right))
             .op(Op::infix(Rule::plus, Left) |
                 Op::infix(Rule::dash, Left))
             .op(Op::infix(Rule::star, Left) |
                 Op::infix(Rule::slash, Left) |
                 Op::infix(Rule::percent, Left))
             .op(Op::infix(Rule::dbl_star, Right))
-            // Reduce operator
+            .op(Op::infix(Rule::reduce_op, Right))
             .op(Op::infix(Rule::dbl_qst, Right))
             .op(Op::infix(Rule::at, Right))
             .op(Op::prefix(Rule::dash_pre) |
@@ -129,7 +129,7 @@ fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
     }
 }
 
-fn parse_expr(expr: Pair<Rule>) -> ExprResult {
+pub fn parse_expr(expr: Pair<Rule>) -> ExprResult {
     match expr.as_rule() {
         Rule::nested_expr => parse_nested_expr(expr),
         Rule::select_expr => parse_select_expr(expr),
@@ -435,6 +435,51 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         Rule::kw_in => BinOp::In,
         Rule::kw_notin => BinOp::Notin,
         Rule::kw_subset => BinOp::Subset,
+        Rule::reduce_op => {
+            let inner_op = careful_unwrap(op.into_inner().next())?;
+            return Ok(match inner_op.as_rule() {
+                Rule::ident => Expr::ReduceExpr {
+                    reducer: Box::new(parse_ident(inner_op)?),
+                    lhs: Box::new(lhs?),
+                    rhs: Box::new(rhs?),
+                },
+                Rule::nested_expr => Expr::ReduceExpr {
+                    reducer: Box::new(parse_nested_expr(inner_op)?),
+                    lhs: Box::new(lhs?),
+                    rhs: Box::new(rhs?),
+                },
+                _ => {
+                    if let Some(binop) = parse_reducible_op(inner_op) {
+                        Expr::ReduceOp {
+                            op: binop,
+                            lhs: Box::new(lhs?),
+                            rhs: Box::new(rhs?),
+                        }
+                    } else {
+                        Err(String::from("Reduce expression can only accept identifiers, nested expressions, or some binary operators"))?
+                    }
+                }
+            });
+        }
+        Rule::infix_inject_op => {
+            let inner_op = careful_unwrap(op.into_inner().next())?;
+            println!("Parsing injection: {inner_op:?}");
+            return Ok(match inner_op.as_rule() {
+                Rule::ident => Expr::Inject {
+                    injector: Box::new(parse_ident(inner_op)?),
+                    lhs: Box::new(lhs?),
+                    rhs: Box::new(rhs?),
+                },
+                Rule::nested_expr => Expr::Inject {
+                    injector: Box::new(parse_nested_expr(inner_op)?),
+                    lhs: Box::new(lhs?),
+                    rhs: Box::new(rhs?),
+                },
+                _ => Err(String::from(
+                    "Inject expression can only accept identifiers and nested expressions.",
+                ))?,
+            });
+        }
         _ => unreachable!(),
     };
     Ok(Expr::Infix {
@@ -677,6 +722,33 @@ fn parse_stmt_list(stmt_list: Pair<Rule>) -> StmtListResult {
 fn span_start_str(span: Span) -> String {
     let (line, col) = span.start_pos().line_col();
     format!("Line {}, Col: {}", line, col)
+}
+
+// Only a subset of binary operators can be used in a reduce operation (and the subset
+// operator ain't one of 'em). As long as the operator's first operand is the same type
+// as the output, the operator can reduce over a collection, which is generally true
+// for all the binary operations here. Technically, the arithmetic operators can start
+// with an int and output a float, but they're interoperable on the same operator, so
+// it's fine.
+fn parse_reducible_op(pair: Pair<Rule>) -> Option<BinOp> {
+    Some(match pair.as_rule() {
+        Rule::dbl_qst => BinOp::Nullcoel,
+        Rule::dbl_star => BinOp::Exp,
+        Rule::dbl_lt | Rule::kw_with => BinOp::WithBitLeft,
+        Rule::dbl_gt | Rule::kw_less => BinOp::LessBitRight,
+        Rule::dbl_amp | Rule::kw_and => BinOp::And,
+        Rule::dbl_pipe | Rule::kw_or => BinOp::Or,
+        Rule::star | Rule::kw_inter => BinOp::Mult,
+        Rule::slash | Rule::kw_div => BinOp::Div,
+        Rule::plus | Rule::kw_union => BinOp::Add,
+        Rule::dash => BinOp::Subtract,
+        Rule::amp => BinOp::BitAnd,
+        Rule::pipe => BinOp::BitOr,
+        Rule::caret => BinOp::BitXor,
+        Rule::kw_impl => BinOp::Impl,
+        Rule::kw_mod | Rule::percent => BinOp::Mod,
+        _ => None?,
+    })
 }
 
 fn careful_unwrap(part: Option<Pair<Rule>>) -> Result<Pair<Rule>, YsetlParseError> {

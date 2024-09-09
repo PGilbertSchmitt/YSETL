@@ -42,12 +42,12 @@ pub fn print_bytecode(bytes: &Bytes) {
     }
 }
 
-/**
- * Collection creation flags
+/* Collection creation flags
  *
  * - Collection Type: XX-- ----
- *   Tuple - 10
- *   Set   - 01
+ *   Reducer - 00
+ *   Tuple   - 10
+ *   Set     - 01
  *
  * - Inclusivity bit: --X- ----
  *   Exclusive - 0
@@ -56,9 +56,18 @@ pub fn print_bytecode(bytes: &Bytes) {
  * - Step bit: ---X ----
  *   Without Step - 0
  *   With Step    - 1
+ *
+ * - Reducer Op Bit: ---- X---
+ *   With expression - 0
+ *   With operator   - 1
  */
 
-pub const TUP_BASE: u8 = 0b1000_0000;
-pub const SET_BASE: u8 = 0b0100_0000;
-pub const INCL_BIT: u8 = 0b0010_0000;
-pub const STEP_BIT: u8 = 0b0001_0000;
+#[rustfmt::skip]
+pub mod flags {
+    pub const RED_BASE: u8   = 0b0000_0000; // Is that a TF2 reference!? No, short for reducer
+    pub const TUP_BASE: u8   = 0b1000_0000;
+    pub const SET_BASE: u8   = 0b0100_0000;
+    pub const INCL_BIT: u8   = 0b0010_0000;
+    pub const STEP_BIT: u8   = 0b0001_0000;
+    pub const RED_OP_BIT: u8 = 0b0000_1000;
+}
