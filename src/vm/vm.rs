@@ -32,6 +32,7 @@ pub struct VM {
     stack: Vec<Object>,
     globals: Vec<Object>,
     atoms: Vec<Atom>,
+    match_stack: Vec<Object>,
 
     null_ref: Object,
     true_ref: Object,
@@ -56,6 +57,7 @@ impl VM {
                 .map(|_| null_ref.clone())
                 .collect(),
             atoms: bc.atoms,
+            match_stack: Vec::new(),
 
             null_ref,
             true_ref,
@@ -178,6 +180,14 @@ impl VM {
                     self.stack.pop_one();
                 }
 
+                op::PUSH_MATCH => {
+                    self.match_stack.push(self.stack.pop_one());
+                }
+
+                op::POP_MATCH => {
+                    self.match_stack.pop();
+                }
+
                 op::JUMP => {
                     let jmp_pos = Self::read_u32(&ins, i_ptr);
                     i_ptr = jmp_pos as usize;
@@ -222,6 +232,18 @@ impl VM {
                 op::JUMP_PEEK_NULL => {
                     let jmp_pos = Self::read_u32(&ins, i_ptr);
                     if !self.stack.last().unwrap().is_null() {
+                        i_ptr = jmp_pos as usize;
+                    } else {
+                        i_ptr += 4;
+                    }
+                }
+
+                op::JUMP_NOT_MATCH => {
+                    let jmp_pos = Self::read_u32(&ins, i_ptr);
+                    let to_match = self.match_stack
+                        .last()
+                        .expect("Match stack was empty!");
+                    if &self.stack.pop_one() != to_match {
                         i_ptr = jmp_pos as usize;
                     } else {
                         i_ptr += 4;
@@ -454,7 +476,7 @@ impl VM {
                 _ => {
                     println!("Still need to implement op {op}. Attempting lookup:");
                     let (name, widths) = lookup(op);
-                    println!("Lookup value: {name} [{widths:?}]");
+                    panic!("Lookup value: {name} {widths:?}");
                 }
             }
         }

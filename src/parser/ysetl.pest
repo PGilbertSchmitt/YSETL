@@ -304,7 +304,7 @@ ternary_expr = !{ kw_if ~ expr ~ qst ~ stmt ~ colon ~ stmt }
 
 // The only kinds of expression which can appear inside a case condition
 // are the non-conditional kinds which can be immediately executed without
-// jumps.
+// jumps. (though to be fair, those can be injected via nested expressions)
 case_expr = _{
   | tilde
   | select_expr

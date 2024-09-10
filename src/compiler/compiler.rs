@@ -10,7 +10,7 @@ use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
     BinOp, Bound, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp, SingleIterator, Stmt,
-    StmtList, StmtListWithCapture,
+    StmtList, StmtListWithCapture, SwitchCase,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -221,9 +221,67 @@ impl Compiler {
             }
             Expr::Select { op, iterator } => self.compile_select_iterator(op, iterator),
             Expr::Switch {
-                condition: _,
-                cases: _,
-            } => {}
+                condition,
+                cases,
+            } => {
+                let is_match_switch = condition.is_some();
+                let conditional_jump_operator = if is_match_switch {
+                    op::JUMP_NOT_MATCH
+                } else {
+                    op::JUMP_IF_FALSE
+                };
+
+                condition.map(|match_expr| {
+                    self.compile_expr(*match_expr);
+                    self.emit(op::PUSH_MATCH);
+                });
+
+                let mut last_cond_jump_ptr: Option<usize> = None;
+                let mut unconditional_jump_ptrs: Vec<usize> = Vec::with_capacity(cases.len());
+                let mut has_default_case = false;
+                
+                for SwitchCase {condition, consequence} in cases {
+                    println!("WORMHAT");
+                    if let Some(ptr_location) = last_cond_jump_ptr {
+                        self.overwrite_u32(ptr_location, self.ins_len() as u32);
+                    }
+                    match condition {
+                        Some(expr) => {
+                            self.compile_expr(expr);
+
+                            let cond_jump_ptr = self.ins_len() + 1;
+                            last_cond_jump_ptr = Some(cond_jump_ptr);
+                            self.emit_with_u32(conditional_jump_operator, u32::MAX);
+                            self.compile_stmt_like_expr(consequence);
+
+                            let uncond_jump_ptr = self.ins_len() + 1;
+                            unconditional_jump_ptrs.push(uncond_jump_ptr);
+                            self.emit_with_u32(op::JUMP, u32::MAX);
+                        },
+                        None => {
+                            has_default_case = true;
+                            self.compile_stmt_like_expr(consequence);
+                            break;
+                        },
+                    }
+                }
+
+                if !has_default_case {
+                    if let Some(ptr_location) = last_cond_jump_ptr {
+                        self.overwrite_u32(ptr_location, self.ins_len() as u32);
+                    }
+                    self.emit(op::NULL);
+                }
+
+                if is_match_switch {
+                    self.emit(op::POP_MATCH);
+                };
+
+                let continue_ptr = self.ins_len() as u32;
+                unconditional_jump_ptrs.into_iter().for_each(|jump_ptr| {
+                    self.overwrite_u32(jump_ptr, continue_ptr);
+                });
+            }
             // A block is basically just a function with 0 parameters that is executed immediately, but I
             // feel like there should be a more efficient way of doing this. It's not coming to me
             // immediately, but perhaps I can at least combine a real function with it's block expr

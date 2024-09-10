@@ -22,15 +22,12 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "\
-A = {1..5};
-B = {70, 80, 90, 100};
-add = (a, b) => a + b;
-min = (a, b) => if a < b ? a : b;
-max = (a, b) => if a > b ? a : b;
-print 1 %* A;
-print 0 %+ B;
-print ^B %min B;
-print ^B %max B;
+A = switch (5) {
+  case 5.0 |> 99,
+  case 5 |> 101,
+  case ~ |> 203,
+};
+print A;
     ",
     );
     let comp = Compiler::new();

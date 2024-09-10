@@ -23,6 +23,8 @@ pub const MAKE_FN: Op = 15;
 
 // Stack Operations
 pub const POP: Op = 20;
+pub const PUSH_MATCH: Op = 21;
+pub const POP_MATCH: Op = 22;
 
 // Control Flow
 pub const JUMP: Op = 30;
@@ -31,6 +33,7 @@ pub const JUMP_IF_TRUE: Op = 32; // More convenient than pushing an extra NOT op
 pub const JUMP_PEEK_AND: Op = 33;
 pub const JUMP_PEEK_OR: Op = 34;
 pub const JUMP_PEEK_NULL: Op = 35;
+pub const JUMP_NOT_MATCH: Op = 36;
 
 pub const CALL: Op = 40;
 pub const RETURN: Op = 41;
@@ -106,7 +109,8 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         MAKE_FN => ("MAKE_FN", &[2, 2]),
 
         POP => ("POP", &[]),
-        PRINT => ("PRINT", &[]),
+        PUSH_MATCH => ("PUSH_MATCH", &[]),
+        POP_MATCH => ("POP_MATCH", &[]),
 
         JUMP => ("JUMP", &[4]),
         JUMP_IF_FALSE => ("JUMP_IF_FALSE", &[4]),
@@ -114,6 +118,7 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         JUMP_PEEK_AND => ("JUMP_PEEK_AND", &[4]),
         JUMP_PEEK_OR => ("JUMP_PEEK_OR", &[4]),
         JUMP_PEEK_NULL => ("JUMP_PEEK_NULL", &[4]),
+        JUMP_NOT_MATCH => ("JUMP_NOT_MATCH", &[4]),
 
         CALL => ("CALL", &[2]),
         RETURN => ("RETURN", &[]),
@@ -129,6 +134,8 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         GET_ACC => ("GET_ACC", &[]),
         REDUCE_CALL => ("REDUCE_CALL", &[]),
         REDUCE_WITH => ("REDUCE_WITH", &[1]),
+
+        PRINT => ("PRINT", &[]),
 
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),
