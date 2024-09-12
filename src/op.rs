@@ -43,16 +43,17 @@ pub const ITER_START: Op = 60;
 pub const ITER_NEXT: Op = 61;
 pub const ITER_COLLECT: Op = 62;
 pub const ITER_END: Op = 63;
-pub const DUP_ITER: Op = 64;
-pub const GET_ITER_VAL: Op = 65;
-pub const GET_ITER_KEY: Op = 66;
-pub const ITER_EMPTY_CHECK: Op = 67;
-pub const GET_ACC: Op = 68;
-pub const REDUCE_CALL: Op = 69;
-pub const REDUCE_WITH: Op = 70;
+pub const GET_ITER_VAL: Op = 64;
+pub const GET_ITER_KEY: Op = 65;
+pub const ITER_EMPTY_CHECK: Op = 66;
+pub const GET_ACC: Op = 67;
+pub const REDUCE_CALL: Op = 68;
+pub const REDUCE_WITH: Op = 69;
+pub const MAKE_ITER: Op = 70;
 
 // Builtins
 pub const PRINT: Op = 150;
+pub const PRINT_DBG: Op = 151;
 
 // Binary Operations
 pub const TAKE: Op = 201;
@@ -77,6 +78,7 @@ pub const GTEQ: Op = 219;
 pub const EQ: Op = 220;
 pub const NEQ: Op = 221;
 pub const LOGICAL_IMPL: Op = 222;
+pub const INSERT: Op = 223;
 
 // Prefix Operations
 pub const NOT: Op = 240;
@@ -127,7 +129,7 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         ITER_NEXT => ("ITER_NEXT", &[1, 4]),
         ITER_COLLECT => ("ITER_COLLECT", &[]),
         ITER_END => ("ITER_END", &[]),
-        DUP_ITER => ("DUP_ITER", &[]),
+        MAKE_ITER => ("MAKE_ITER", &[1]),
         GET_ITER_VAL => ("GET_ITER_VAL", &[1]),
         GET_ITER_KEY => ("GET_ITER_KEY", &[1]),
         ITER_EMPTY_CHECK => ("ITER_EMPTY_CHECK", &[4]),
@@ -136,6 +138,7 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         REDUCE_WITH => ("REDUCE_WITH", &[1]),
 
         PRINT => ("PRINT", &[]),
+        PRINT_DBG => ("PRINT_DBG", &[]),
 
         TAKE => ("TAKE", &[]),
         EXP => ("EXP", &[]),
@@ -159,6 +162,8 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         EQ => ("EQ", &[]),
         NEQ => ("NEQ", &[]),
         LOGICAL_IMPL => ("LOGICAL_IMPL", &[]),
+
+        INSERT => ("INSERT", &[]),
 
         NOT => ("NOT", &[]),
         NEGATE => ("NEGATE", &[]),

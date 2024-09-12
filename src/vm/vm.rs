@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::binop::execute_binop;
-use super::frame::{Collector, Frame};
+use super::frame::Frame;
+use super::iterator::Collector;
 use super::preop::execute_pre_op;
 use bytes::Bytes;
 
-use crate::compiler::bytecode::flags::RED_OP_BIT;
+use crate::compiler::bytecode::flags::{collection_flag_enabled, MAP_BASE, RED_OP_BIT};
 use crate::compiler::bytecode::{
     flags::{SET_BASE, STEP_BIT, TUP_BASE},
     Bytecode,
@@ -119,17 +121,33 @@ impl VM {
                 }
 
                 op::MAKE_LIT_COL => {
-                    let flag = ins[i_ptr];
+                    let flags = ins[i_ptr];
                     let size = Self::read_u16(&ins, i_ptr + 1) as usize;
                     i_ptr += 3;
-                    let stack_start_ptr = self.stack.len() - size;
-                    let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
-
-                    self.stack.push(if flag & TUP_BASE == 0 {
-                        Object::new_set_from_vec(elements)
+                    if collection_flag_enabled(flags, MAP_BASE) {
+                        let stack_start_ptr = self.stack.len() - (size * 2);
+                        let mut map_inner: HashMap<Object, Object> = HashMap::with_capacity(size);
+                        for pair in self
+                            .stack
+                            .drain(stack_start_ptr..)
+                            .collect::<Vec<_>>()
+                            .chunks(2)
+                        {
+                            map_inner.insert(pair[0].clone(), pair[1].clone());
+                        }
+                        self.stack.push(Object::new_map(map_inner))
                     } else {
-                        Object::new_tuple(elements)
-                    })
+                        let stack_start_ptr = self.stack.len() - size;
+                        let elements: Vec<Object> = self.stack.drain(stack_start_ptr..).collect();
+
+                        // self.stack.push(if flags & TUP_BASE == 0 {
+                        self.stack
+                            .push(if collection_flag_enabled(flags, SET_BASE) {
+                                Object::new_set_from_vec(elements)
+                            } else {
+                                Object::new_tuple(elements)
+                            });
+                    }
                 }
 
                 op::MAKE_RN_COL => {
@@ -240,9 +258,7 @@ impl VM {
 
                 op::JUMP_NOT_MATCH => {
                     let jmp_pos = Self::read_u32(&ins, i_ptr);
-                    let to_match = self.match_stack
-                        .last()
-                        .expect("Match stack was empty!");
+                    let to_match = self.match_stack.last().expect("Match stack was empty!");
                     if &self.stack.pop_one() != to_match {
                         i_ptr = jmp_pos as usize;
                     } else {
@@ -304,6 +320,7 @@ impl VM {
                     let params_start = self.stack.len() - locked_param_count;
                     let iterator = &self.base_iterators[iter_idx as usize];
                     let closed_values = Rc::new(self.stack.drain(params_start..).collect());
+
                     let collections_start = params_start - collection_count;
                     let collections = self.stack.drain(collections_start..).collect();
 
@@ -338,7 +355,7 @@ impl VM {
                         i_ptr,
                         base_pointer,
                         closed_values,
-                        &collections,
+                        collections,
                         collector,
                         reducer,
                     ));
@@ -398,8 +415,10 @@ impl VM {
                     self.stack.push(last_frame.into_collector());
                 }
 
-                op::DUP_ITER => {
-                    self.stack.push(self.stack.last().unwrap().clone());
+                op::MAKE_ITER => {
+                    let collection_index = ins[i_ptr] as usize;
+                    i_ptr += 1;
+                    self.frame_mut().make_iter(collection_index);
                 }
 
                 op::GET_ITER_VAL => {
@@ -420,10 +439,6 @@ impl VM {
                     if self.frame().any_iter_empty() {
                         i_ptr = jump_pos as usize;
                     };
-                }
-
-                op::PRINT => {
-                    println!("{}", self.stack.pop_one().to_s());
                 }
 
                 op::EQ => {
@@ -467,6 +482,22 @@ impl VM {
                 op::NOT | op::NEGATE | op::SIZE | op::HEAD | op::LAST | op::TAIL | op::INIT => {
                     let right = self.stack.pop_one();
                     self.stack.push(execute_pre_op(op, right));
+                }
+
+                // Ternary operation (not the conditional)
+                op::INSERT => {
+                    let value = self.stack.pop_one();
+                    let key = self.stack.pop_one();
+                    let map = self.stack.pop_one();
+                    self.stack.push(map.insert(key, value));
+                }
+
+                op::PRINT => {
+                    println!("{}", self.stack.pop_one().to_s());
+                }
+
+                op::PRINT_DBG => {
+                    println!("{}", self.stack.pop_one().to_debug_string());
                 }
 
                 op::DBG_PRINT_STACK_TOP => {

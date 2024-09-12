@@ -3,19 +3,23 @@ use bytes::Bytes;
 use once_cell::unsync::OnceCell;
 use rand::RngCore;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     hash::{DefaultHasher, Hash, Hasher},
     mem,
     rc::Rc,
 };
 
-use crate::compiler::bytecode::flags::{INCL_BIT, TUP_BASE};
+use crate::{
+    compiler::bytecode::flags::{INCL_BIT, TUP_BASE},
+    vm::iterator::CollectionKind,
+};
 
 #[derive(Debug, Clone)]
 pub enum IterKind {
     Tuple,
     Set,
     String,
+    Map,
 }
 
 pub trait ObjectOps {
@@ -27,8 +31,10 @@ pub trait ObjectOps {
     fn can_reduce(&self) -> bool;
     fn inner_tuple(&self) -> Vec<Object>;
     fn inner_set(&self) -> HashSet<Object>;
+    fn inner_map(&self) -> HashMap<Object, Object>;
     fn is_zero(&self) -> bool;
     fn ord_flt(&self) -> f64;
+    fn insert(&self, key: Object, right: Object) -> Object;
 
     fn make_range(range_start: i64, range_end: i64, step: Option<usize>, flag: u8) -> Self;
 
@@ -37,8 +43,8 @@ pub trait ObjectOps {
 }
 
 pub trait FrameOps {
-    fn to_vec(&self) -> Vec<Object>;
-    fn iter_kind(&self) -> IterKind;
+    fn to_collection(&self) -> CollectionKind;
+    // fn to_map_collection(&self) -> CollectionKind;
 }
 
 pub trait PreOps {
@@ -68,6 +74,10 @@ pub enum Object {
     },
     Set {
         elements: Rc<HashSet<Object>>,
+        seed: Rc<OnceCell<u64>>,
+    },
+    Map {
+        elements: Rc<HashMap<Object, Object>>,
         seed: Rc<OnceCell<u64>>,
     },
     Closure {
@@ -105,6 +115,13 @@ impl Object {
         }
     }
 
+    pub fn new_map(elements: HashMap<Object, Object>) -> Self {
+        Self::Map {
+            elements: Rc::new(elements),
+            seed: Rc::new(OnceCell::new()),
+        }
+    }
+
     pub fn new_closure(executor: Executor, num_req_params: usize, num_opt_params: usize) -> Self {
         Self::Closure {
             inner: Rc::new(Closure {
@@ -124,6 +141,16 @@ impl Object {
             Object::Set { seed, .. } => Some(seed),
             Object::Closure { seed, .. } => Some(seed),
             _ => None,
+        }
+    }
+
+    fn to_key_string(&self) -> String {
+        match self {
+            Self::String { .. } => self.to_debug_string(),
+            Self::Atom(atom) => atom.1.clone(),
+            Self::Int(val) => format!("({val})"),
+            Self::Float(val) => format!("({val})"),
+            _ => self.to_s(),
         }
     }
 
@@ -209,7 +236,14 @@ impl ObjectOps for Object {
     fn inner_set(&self) -> HashSet<Object> {
         match &self {
             &Object::Set { elements, .. } => (*elements.clone()).clone(),
-            _ => panic!("Could not convert {self:?} into a vector"),
+            _ => panic!("Could not convert {self:?} into a set"),
+        }
+    }
+
+    fn inner_map(&self) -> HashMap<Object, Object> {
+        match &self {
+            &Object::Map { elements, .. } => (*elements.clone()).clone(),
+            _ => panic!("Could not convert {self:?} into a map"),
         }
     }
 
@@ -227,6 +261,17 @@ impl ObjectOps for Object {
             Object::Float(x) => *x,
             Object::Set { elements, .. } => elements.len() as f64,
             _ => panic!("Cannot compare value {}", self.to_debug_string()),
+        }
+    }
+
+    fn insert(&self, key: Object, value: Object) -> Object {
+        match self {
+            Object::Map { elements, .. } => {
+                let mut new_elements = (*elements.clone()).clone();
+                new_elements.insert(key, value);
+                Object::new_map(new_elements)
+            }
+            _ => panic!("Cannot insert into value {}", self.to_s()),
         }
     }
 
@@ -278,7 +323,15 @@ impl ObjectOps for Object {
                     .iter()
                     .map(|o| o.to_s())
                     .collect::<Vec<String>>()
-                    .join(",")
+                    .join(", ")
+            ),
+            Self::Map { elements, .. } => format!(
+                "{{{}}}",
+                elements
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k.to_key_string(), v.to_s()))
+                    .collect::<Vec<String>>()
+                    .join(", ")
             ),
             // This could change if we also stored the function's string
             // along with the compliled data, but this is good enough for now
@@ -304,15 +357,23 @@ impl ObjectOps for Object {
                     .iter()
                     .map(|o| o.to_debug_string())
                     .collect::<Vec<String>>()
-                    .join(",")
+                    .join(", ")
             ),
             Self::Set { elements, .. } => format!(
-                "{{{}}}",
+                "s{{{}}}",
                 elements
                     .iter()
                     .map(|o| o.to_debug_string())
                     .collect::<Vec<String>>()
-                    .join(",")
+                    .join(", ")
+            ),
+            Self::Map { elements, .. } => format!(
+                "m{{{}}}",
+                elements
+                    .iter()
+                    .map(|(k, v)| format!("{}: {}", k.to_debug_string(), v.to_debug_string()))
+                    .collect::<Vec<String>>()
+                    .join(", ")
             ),
             _ => self.to_s(),
         }
@@ -320,24 +381,24 @@ impl ObjectOps for Object {
 }
 
 impl FrameOps for Object {
-    fn to_vec(&self) -> Vec<Object> {
-        match &self {
-            Object::Tuple { elements, .. } => elements.to_vec(),
-            Object::String { value, .. } => value
-                .split("")
-                .map(|str| Object::new_string(str.to_owned()))
-                .collect(),
-            Object::Set { elements, .. } => elements.iter().map(Object::clone).collect(),
-            _ => panic!("Cannot convert {} into list-like", self.to_debug_string()),
-        }
-    }
-
-    fn iter_kind(&self) -> IterKind {
-        match &self {
-            &Object::Tuple { .. } => IterKind::Tuple,
-            &Object::String { .. } => IterKind::String,
-            &Object::Set { .. } => IterKind::Set,
-            _ => unimplemented!(),
+    fn to_collection(&self) -> CollectionKind {
+        match self {
+            Object::String { value, .. } => CollectionKind::ListLike(
+                value
+                    .split("")
+                    .map(|str| Object::new_string(str.to_owned()))
+                    .collect(),
+            ),
+            Object::Tuple { elements, .. } => {
+                CollectionKind::ListLike((*elements.clone()).clone().into_iter().collect())
+            }
+            Object::Set { elements, .. } => {
+                CollectionKind::ListLike((*elements.clone()).clone().into_iter().collect())
+            }
+            Object::Map { elements, .. } => {
+                CollectionKind::MapLike((*elements.clone()).clone().into_iter().collect())
+            }
+            _ => panic!("Cannot convert {} into a list-like collection", self.to_s()),
         }
     }
 }
@@ -373,6 +434,7 @@ impl PreOps for Object {
             Object::String { value, .. } => Object::Int(value.len() as i64),
             Object::Tuple { elements, .. } => Object::Int(elements.len() as i64),
             Object::Set { elements, .. } => Object::Int(elements.len() as i64),
+            Object::Map { elements, .. } => Object::Int(elements.len() as i64),
             Object::Closure { .. } => panic!("Cannot find cardinality of a function"),
         }
     }
@@ -461,30 +523,32 @@ impl PartialEq for Object {
                     seed: other_seed,
                     ..
                 },
-            ) => same_seed(seed, other_seed)
-                .map_or_else(|| elements == other_elements, |is_same_seed| is_same_seed),
+            ) => same_seed(seed, other_seed).unwrap_or_else(|| elements == other_elements),
             (
                 Object::Set { elements, seed },
                 Object::Set {
                     elements: other_elements,
                     seed: other_seed,
                 },
-            ) => same_seed(seed, other_seed)
-                .map_or_else(|| elements == other_elements, |is_same_seed| is_same_seed),
+            ) => same_seed(seed, other_seed).unwrap_or_else(|| elements == other_elements),
             (
                 Object::Closure { inner, seed },
                 Object::Closure {
                     inner: other_inner,
                     seed: other_seed,
                 },
-            ) => same_seed(seed, other_seed).map_or_else(
-                || {
-                    inner.executor == other_inner.executor
-                        && inner.num_req_params == other_inner.num_req_params
-                        && inner.num_opt_params == other_inner.num_opt_params
+            ) => same_seed(seed, other_seed).unwrap_or_else(|| {
+                inner.executor == other_inner.executor
+                    && inner.num_req_params == other_inner.num_req_params
+                    && inner.num_opt_params == other_inner.num_opt_params
+            }),
+            (
+                Object::Map { elements, seed },
+                Object::Map {
+                    elements: other_elements,
+                    seed: other_seed,
                 },
-                |is_same_seed| is_same_seed,
-            ),
+            ) => same_seed(seed, other_seed).unwrap_or_else(|| elements == other_elements),
             _ => false,
         }
     }
@@ -545,6 +609,27 @@ impl Hash for Object {
                         .collect::<Vec<u64>>();
                     element_subhashes.sort();
                     element_subhashes.iter().for_each(|el| el.hash(h));
+                });
+                seed.hash(state);
+            }
+            Object::Map { elements, seed } => {
+                state.write_u8(b'm');
+                let seed = Object::try_seed(seed, |h| {
+                    let mut key_value_pair_subhashes = elements
+                        .iter()
+                        .map(|(k, v)| {
+                            // Just like Sets, there are 3 layers of nested hashing. Hopefully this is okay...
+                            // (it's probably not necessary, but I'll need to benchmark to take a look)
+                            let mut sub_seed_hasher: DefaultHasher = DefaultHasher::new();
+                            sub_seed_hasher.write_u8(b'k');
+                            k.hash(&mut sub_seed_hasher);
+                            sub_seed_hasher.write_u8(b'v');
+                            v.hash(&mut sub_seed_hasher);
+                            sub_seed_hasher.finish()
+                        })
+                        .collect::<Vec<u64>>();
+                    key_value_pair_subhashes.sort();
+                    key_value_pair_subhashes.iter().for_each(|el| el.hash(h));
                 });
                 seed.hash(state);
             }

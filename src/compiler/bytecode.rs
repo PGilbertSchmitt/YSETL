@@ -48,6 +48,7 @@ pub fn print_bytecode(bytes: &Bytes) {
  *   Reducer - 00
  *   Tuple   - 10
  *   Set     - 01
+ *   Map     - 11
  *
  * - Inclusivity bit: --X- ----
  *   Exclusive - 0
@@ -64,10 +65,17 @@ pub fn print_bytecode(bytes: &Bytes) {
 
 #[rustfmt::skip]
 pub mod flags {
-    pub const RED_BASE: u8   = 0b0000_0000; // Is that a TF2 reference!? No, short for reducer
-    pub const TUP_BASE: u8   = 0b1000_0000;
-    pub const SET_BASE: u8   = 0b0100_0000;
-    pub const INCL_BIT: u8   = 0b0010_0000;
-    pub const STEP_BIT: u8   = 0b0001_0000;
+    pub const BASE_BITS:  u8 = 0b1100_0000;
+
+    pub const RED_BASE:   u8 = 0b0000_0000; // Is that a TF2 reference!? No, short for reducer
+    pub const TUP_BASE:   u8 = 0b1000_0000;
+    pub const SET_BASE:   u8 = 0b0100_0000;
+    pub const MAP_BASE:   u8 = 0b1100_0000;
+    pub const INCL_BIT:   u8 = 0b0010_0000;
+    pub const STEP_BIT:   u8 = 0b0001_0000;
     pub const RED_OP_BIT: u8 = 0b0000_1000;
+
+    pub fn collection_flag_enabled(flags: u8, base: u8) -> bool {
+        (flags & BASE_BITS) == base
+    }
 }

@@ -2,15 +2,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::u32;
 
-use super::bytecode::flags::{INCL_BIT, RED_BASE, RED_OP_BIT, SET_BASE, STEP_BIT, TUP_BASE};
+use super::bytecode::flags::{
+    INCL_BIT, MAP_BASE, RED_BASE, RED_OP_BIT, SET_BASE, STEP_BIT, TUP_BASE,
+};
 use super::bytecode::Bytecode;
 use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 
 use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
-    BinOp, Bound, Expr, ExprList, Former, Iterator, Postfix, PreOp, SelectOp, SingleIterator, Stmt,
-    StmtList, StmtListWithCapture, SwitchCase,
+    BinOp, Bound, Expr, ExprList, Former, Iterator, KeyValuePair, Postfix, PreOp, SelectOp,
+    SingleIterator, Stmt, StmtList, StmtListWithCapture, SwitchCase,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -70,6 +72,10 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.emit(op::PRINT); // Performs a pop
             }
+            Stmt::PrintDbg(expr) => {
+                self.compile_expr(expr);
+                self.emit(op::PRINT_DBG); // Performs a pop
+            }
             Stmt::Assign { target, value } => {
                 match target {
                     Bound::Ident(ident) => {
@@ -98,6 +104,11 @@ impl Compiler {
             Stmt::Print(expr) => {
                 self.compile_expr(expr);
                 self.emit(op::PRINT);
+                self.emit(op::NULL);
+            }
+            Stmt::PrintDbg(expr) => {
+                self.compile_expr(expr);
+                self.emit(op::PRINT_DBG);
                 self.emit(op::NULL);
             }
             Stmt::Assign { .. } => panic!("Cannot assign a variable here!"),
@@ -129,6 +140,14 @@ impl Compiler {
             Expr::String(value) => {
                 let const_ptr = self.add_const(Object::new_string(value));
                 self.emit_with_u16(op::CONST, const_ptr);
+            }
+            Expr::Map(pairs) => {
+                let size = pairs.len() as u16;
+                for KeyValuePair(key, value) in pairs.into_iter() {
+                    self.compile_expr(key);
+                    self.compile_expr(value);
+                }
+                self.emit_with_u8_u16(op::MAKE_LIT_COL, MAP_BASE, size);
             }
             Expr::Tuple(former) => self.compile_former(former, TUP_BASE),
             Expr::Set(former) => self.compile_former(former, SET_BASE),
@@ -220,10 +239,7 @@ impl Compiler {
                 self.overwrite_u32(jump_operand_ptr, jump_destination as u32)
             }
             Expr::Select { op, iterator } => self.compile_select_iterator(op, iterator),
-            Expr::Switch {
-                condition,
-                cases,
-            } => {
+            Expr::Switch { condition, cases } => {
                 let is_match_switch = condition.is_some();
                 let conditional_jump_operator = if is_match_switch {
                     op::JUMP_NOT_MATCH
@@ -239,9 +255,12 @@ impl Compiler {
                 let mut last_cond_jump_ptr: Option<usize> = None;
                 let mut unconditional_jump_ptrs: Vec<usize> = Vec::with_capacity(cases.len());
                 let mut has_default_case = false;
-                
-                for SwitchCase {condition, consequence} in cases {
-                    println!("WORMHAT");
+
+                for SwitchCase {
+                    condition,
+                    consequence,
+                } in cases
+                {
                     if let Some(ptr_location) = last_cond_jump_ptr {
                         self.overwrite_u32(ptr_location, self.ins_len() as u32);
                     }
@@ -257,12 +276,12 @@ impl Compiler {
                             let uncond_jump_ptr = self.ins_len() + 1;
                             unconditional_jump_ptrs.push(uncond_jump_ptr);
                             self.emit_with_u32(op::JUMP, u32::MAX);
-                        },
+                        }
                         None => {
                             has_default_case = true;
                             self.compile_stmt_like_expr(consequence);
                             break;
-                        },
+                        }
                     }
                 }
 
@@ -328,13 +347,15 @@ impl Compiler {
                 // TODO: Basically everything from here can be converted into a pre-compiled
                 //iterator, since the inside is always the same thing.
                 self.scopes.enter_scope();
+
                 // The indexes and jump pointers are always the same
-                self.emit_with_u32(op::ITER_EMPTY_CHECK, 15);
+                self.emit_with_u8(op::MAKE_ITER, 0);
+                self.emit_with_u32(op::ITER_EMPTY_CHECK, 17);
                 self.emit(op::GET_ACC);
                 self.emit_with_u8(op::GET_ITER_VAL, 0);
                 // An operator as an operand!?
                 self.emit_with_u8(op::REDUCE_WITH, from_binop(op));
-                self.emit_with_u8_u32(op::ITER_NEXT, 0, 5);
+                self.emit_with_u8_u32(op::ITER_NEXT, 0, 7);
                 self.emit(op::ITER_END);
 
                 let (ins, _, _) = self.scopes.exit_scope();
@@ -360,13 +381,15 @@ impl Compiler {
                 // TODO: Basically everything from here can be converted into a pre-compiled
                 //iterator, since the inside is always the same thing.
                 self.scopes.enter_scope();
+
                 // The indexes and jump pointers are always the same
-                self.emit_with_u32(op::ITER_EMPTY_CHECK, 15);
+                self.emit_with_u8(op::MAKE_ITER, 0);
+                self.emit_with_u32(op::ITER_EMPTY_CHECK, 17);
                 self.emit(op::GET_ACC);
                 self.emit_with_u8(op::GET_ITER_VAL, 0);
                 self.emit(op::REDUCE_CALL);
                 self.emit(op::ITER_COLLECT);
-                self.emit_with_u8_u32(op::ITER_NEXT, 0, 5);
+                self.emit_with_u8_u32(op::ITER_NEXT, 0, 7);
                 self.emit(op::ITER_END);
 
                 let (ins, _, _) = self.scopes.exit_scope();
@@ -383,6 +406,12 @@ impl Compiler {
                 self.compile_expr(*lhs);
                 self.compile_expr(*rhs);
                 self.emit_with_u16(op::CALL, 2);
+            }
+            Expr::Insert { key, lhs, rhs } => {
+                self.compile_expr(*lhs); // Map
+                self.compile_expr(*key); // Key
+                self.compile_expr(*rhs); // Value
+                self.emit(op::INSERT);
             }
         };
     }
@@ -486,49 +515,44 @@ impl Compiler {
         iterator: Iterator,
     ) -> (Vec<IterVar>, Option<Box<Expr>>, usize, usize, u8) {
         let Iterator { iterators, filter } = iterator;
-        if iterators.len() > 255 {
+
+        let iterator_count = iterators.len();
+        if iterator_count > 255 {
             panic!("Cannot support an iterator with more than 255 members")
         };
 
         // In the scope before we initiate the iterator, we can compile the collections
         // used for the iterators:
 
-        let mut collection_count: u8 = 0;
         // This line is kinda funny if you think about it, and also a nightmare. We need to iterate
-        // over the iterators BEFORE entering scope to compile the collection expressions
-        // and potentially duplicate them on the stack for multi-bound iterators.
+        // over the iterators and evaluate them onto the stack BEFORE entering a new scope. We need
+        // ownership of the expressions to iterator them, but we'll need to iterate again inside
+        // the new scope with the bounds, so we collect those.
         let iters_only_bounds: Vec<_> = iterators
             .into_iter()
-            .map(|single_iter| {
-                collection_count += 1;
-                match single_iter {
-                    SingleIterator::In { expr, bounds } => {
-                        self.compile_expr(expr);
-                        for _ in 1..bounds.len() {
-                            collection_count += 1;
-                            self.emit(op::DUP_ITER);
-                        }
-                        SingleIterator::In {
-                            bounds,
-                            expr: Expr::Null,
-                        }
+            .map(|single_iter| match single_iter {
+                SingleIterator::In { expr, bounds } => {
+                    self.compile_expr(expr);
+                    SingleIterator::In {
+                        bounds,
+                        expr: Expr::Null,
                     }
+                }
+                SingleIterator::Select {
+                    collection,
+                    key,
+                    value,
+                    ..
+                } => {
+                    let collection_sym = self
+                        .scopes
+                        .lookup_sym(&collection)
+                        .expect("Key-Value iterator must be an initialized variable");
+                    self.load_symbol_on_stack(collection_sym);
                     SingleIterator::Select {
-                        collection,
+                        collection: String::new(),
                         key,
                         value,
-                        ..
-                    } => {
-                        let collection_sym = self
-                            .scopes
-                            .lookup_sym(&collection)
-                            .expect("Key-Value iterator must be an initialized variable");
-                        self.load_symbol_on_stack(collection_sym);
-                        SingleIterator::Select {
-                            collection: String::new(),
-                            key,
-                            value,
-                        }
                     }
                 }
             })
@@ -541,17 +565,20 @@ impl Compiler {
         let mut iter_vars: Vec<IterVar> = vec![];
         iters_only_bounds
             .into_iter()
-            .for_each(|single_iter| match single_iter {
+            .enumerate()
+            .for_each(|(i, single_iter)| match single_iter {
                 SingleIterator::In { bounds, .. } => {
                     if bounds.len() > u8::MAX as usize {
                         panic!("Cannot support an iterator with more than 255 bounds");
                     }
                     for bound in bounds.into_iter() {
+                        self.emit_with_u8(op::MAKE_ITER, i as u8);
                         self.register_bound(bound);
                         iter_vars.push(IterVar::Value);
                     }
                 }
                 SingleIterator::Select { key, value, .. } => {
+                    self.emit_with_u8(op::MAKE_ITER, i as u8);
                     self.register_bound(value);
                     self.register_bound(key);
                     iter_vars.push(IterVar::KeyAndValue);
@@ -570,7 +597,7 @@ impl Compiler {
             filter,
             empty_check_ptr,
             iteration_start_ptr,
-            collection_count,
+            iterator_count as u8,
         )
     }
 

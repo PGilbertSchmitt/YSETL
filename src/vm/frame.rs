@@ -1,86 +1,10 @@
-use std::{collections::HashSet, rc::Rc};
+use std::rc::Rc;
 
 use bytes::Bytes;
 
-use crate::object::object::{FrameOps, IterKind, Object};
+use crate::object::object::Object;
 
-#[derive(Debug, Clone)]
-struct IterCollection {
-    collection: Vec<Object>,
-    pos: usize,
-    size: usize,
-    kind: IterKind,
-}
-
-impl IterCollection {
-    pub fn new(obj: &Object) -> Self {
-        let collection = obj.to_vec();
-        Self {
-            size: collection.len(),
-            collection: collection,
-            pos: 0,
-            kind: obj.iter_kind(),
-        }
-    }
-
-    pub fn increment(&mut self) {
-        self.pos += 1;
-    }
-
-    pub fn finished(&self) -> bool {
-        self.pos >= self.size
-    }
-
-    pub fn reset(&mut self) {
-        self.pos = 0;
-    }
-
-    pub fn current_value(&self) -> Object {
-        self.collection[self.pos].clone()
-    }
-}
-
-#[derive(Debug)]
-pub enum Collector {
-    Tuple(Vec<Object>),
-    Set(HashSet<Object>),
-    Accum(Object),
-}
-
-impl Collector {
-    pub fn new_tuple() -> Self {
-        Self::Tuple(Vec::new())
-    }
-
-    pub fn new_set() -> Self {
-        Self::Set(HashSet::new())
-    }
-
-    pub fn size(&self) -> usize {
-        match self {
-            Self::Tuple(vec) => vec.len(),
-            Self::Set(set) => set.len(),
-            Self::Accum(_) => 1,
-        }
-    }
-
-    pub fn push(&mut self, obj: Object) {
-        match self {
-            Self::Tuple(v) => v.push(obj),
-            Self::Set(s) => {
-                s.insert(obj);
-            }
-            Self::Accum(o) => *o = obj,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct YsetlIter {
-    collections: Vec<IterCollection>,
-    output: Collector,
-    reducer: Option<Object>,
-}
+use super::iterator::{Collector, SingleIterator, YsetlIter};
 
 #[derive(Debug)]
 pub struct Frame {
@@ -88,7 +12,7 @@ pub struct Frame {
     pub return_ptr: usize,
     pub stack_base: usize,
     pub closed_values: Rc<Vec<Object>>,
-    iterator: Option<YsetlIter>,
+    iterator_state: Option<YsetlIter>,
 }
 
 impl Frame {
@@ -103,7 +27,7 @@ impl Frame {
             return_ptr,
             stack_base,
             closed_values,
-            iterator: None,
+            iterator_state: None,
         }
     }
 
@@ -112,7 +36,7 @@ impl Frame {
         return_ptr: usize,
         stack_base: usize,
         closed_values: Rc<Vec<Object>>,
-        collections: &Vec<Object>,
+        collections: Vec<Object>,
         collector: Collector,
         reducer: Option<Object>,
     ) -> Self {
@@ -121,15 +45,19 @@ impl Frame {
             return_ptr,
             stack_base,
             closed_values,
-            iterator: Some(YsetlIter {
-                collections: collections
-                    .into_iter()
-                    .map(|c| IterCollection::new(c))
-                    .collect(),
+            iterator_state: Some(YsetlIter {
+                pre_collections: collections,
+                iterators: Vec::new(),
                 output: collector,
                 reducer,
             }),
         }
+    }
+
+    pub fn make_iter(&mut self, coll_idx: usize) {
+        let iterator = self.iterator_mut();
+        let collection = &iterator.pre_collections[coll_idx];
+        iterator.iterators.push(SingleIterator::new(&collection));
     }
 
     pub fn iter_next(&mut self, iter_idx: usize) -> bool {
@@ -140,7 +68,7 @@ impl Frame {
             // above it. If the iter_idx is 0, then we don't even need to reset, because we
             // would be done with all iteration and will be hitting the end
             if iter_idx > 0 {
-                for iter in self.iterator_mut().collections[iter_idx..].iter_mut() {
+                for iter in self.iterator_mut().iterators[iter_idx..].iter_mut() {
                     iter.reset();
                 }
             }
@@ -156,11 +84,7 @@ impl Frame {
 
     // Iterator keys are based on the type of collection
     pub fn get_iter_key(&self, iter_idx: usize) -> Object {
-        let current_iter = self.iterator_at(iter_idx);
-        match current_iter.kind {
-            IterKind::Tuple | IterKind::String => Object::Int(current_iter.pos as i64),
-            IterKind::Set => current_iter.current_value(),
-        }
+        self.iterator_at(iter_idx).current_key()
     }
 
     pub fn get_collection(&self) -> Object {
@@ -176,13 +100,13 @@ impl Frame {
 
     pub fn any_iter_empty(&self) -> bool {
         self.iterator()
-            .collections
+            .iterators
             .iter()
             .any(|collection| collection.size == 0)
     }
 
     pub fn into_collector(self) -> Object {
-        match self.iterator.unwrap().output {
+        match self.iterator_state.unwrap().output {
             Collector::Tuple(v) => Object::new_tuple(v),
             Collector::Set(s) => Object::new_set(s),
             Collector::Accum(o) => o,
@@ -197,10 +121,10 @@ impl Frame {
             self.stack_base,
         );
 
-        let iter = self.iterator.as_ref().unwrap();
+        let iter = self.iterator_state.as_ref().unwrap();
         println!("Iterators: {{");
         println!("\tOutput: {:?}", iter.output);
-        iter.collections.iter().for_each(|c| {
+        iter.iterators.iter().for_each(|c| {
             println!("\t[{}/{}] {:?}", c.pos, c.size, c.collection);
         });
         println!("}}");
@@ -215,18 +139,18 @@ impl Frame {
     }
 
     fn iterator(&self) -> &YsetlIter {
-        self.iterator.as_ref().expect("Frame is missing")
+        self.iterator_state.as_ref().expect("Frame is missing")
     }
 
     fn iterator_mut(&mut self) -> &mut YsetlIter {
-        self.iterator.as_mut().expect("Frame is missing")
+        self.iterator_state.as_mut().expect("Frame is missing")
     }
 
-    fn iterator_at(&self, idx: usize) -> &IterCollection {
-        &self.iterator().collections[idx]
+    fn iterator_at(&self, idx: usize) -> &SingleIterator {
+        &self.iterator().iterators[idx]
     }
 
-    fn iterator_at_mut(&mut self, idx: usize) -> &mut IterCollection {
-        &mut self.iterator_mut().collections[idx]
+    fn iterator_at_mut(&mut self, idx: usize) -> &mut SingleIterator {
+        &mut self.iterator_mut().iterators[idx]
     }
 }

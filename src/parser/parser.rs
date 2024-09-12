@@ -12,6 +12,7 @@ use super::ast::ExprList;
 use super::ast::Former;
 use super::ast::Iterator;
 use super::ast::IteratorList;
+use super::ast::KeyValuePair;
 use super::ast::Postfix;
 use super::ast::PreOp;
 use super::ast::Range;
@@ -37,6 +38,7 @@ type SingleIteratorResult = YsetlParseResult<SingleIterator>;
 type CaseResult = YsetlParseResult<SwitchCase>;
 type PostfixResult = YsetlParseResult<Postfix>;
 type BlockResult = YsetlParseResult<StmtListWithCapture>;
+type KeyValueResult = YsetlParseResult<KeyValuePair>;
 
 type ParamList = (Vec<String>, Vec<String>);
 
@@ -77,7 +79,8 @@ lazy_static::lazy_static! {
                 Op::infix(Rule::gt, Left) |
                 Op::infix(Rule::gt_eq, Left))
             .op(Op::infix(Rule::dbl_lt, Left) |
-                Op::infix(Rule::dbl_gt, Left))
+                Op::infix(Rule::dbl_gt, Left) |
+                Op::infix(Rule::insert_op, Left))
             .op(Op::infix(Rule::infix_inject_op, Right))
             .op(Op::infix(Rule::plus, Left) |
                 Op::infix(Rule::dash, Left))
@@ -123,6 +126,7 @@ fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
     match stmt.as_rule() {
         Rule::return_stmt => parse_return_stmt(stmt),
         Rule::print_stmt => parse_print_stmt(stmt),
+        Rule::print_d_stmt => parse_print_debug_stmt(stmt),
         // Rule::cond_stmt => parse_cond_stmt(stmt),
         Rule::assign_stmt => parse_assign_stmt(stmt),
         _ => Ok(Stmt::Expr(parse_expr(stmt)?)),
@@ -161,11 +165,13 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::kw_newat => Ok(Expr::Newat),
         Rule::kw_true => Ok(Expr::True),
         Rule::kw_false => Ok(Expr::False),
+        Rule::map_literal_empty => Ok(Expr::Map(Vec::new())),
         Rule::string => parse_string(primary),
         Rule::atom => parse_atom(primary),
         Rule::ident => parse_ident(primary),
         Rule::number => parse_number(primary),
         Rule::tuple_literal => parse_tuple_literal(primary),
+        Rule::map_literal => parse_map_literal(primary),
         Rule::set_literal => parse_set_literal(primary),
         Rule::func_literal => parse_function_literal(primary),
         Rule::nested_expr => parse_nested_expr(primary),
@@ -241,6 +247,31 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
                 )
             })
     }
+}
+
+// key_value_pair([NUMBER,      EXPR])
+// key_value_pair([ATOM_KEEP,   EXPR])
+// key_value_pair([STRING,      EXPR])
+// key_value_pair([NESTED_EXPR, EXPR])
+fn parse_key_value_pair(pair: Pair<Rule>) -> KeyValueResult {
+    let mut parts = pair.into_inner();
+    let key_expr = careful_unwrap(parts.next())?;
+    let key = match key_expr.as_rule() {
+        Rule::number => parse_number(key_expr),
+        Rule::atom_keep => Ok(Expr::Atom(key_expr.as_str().to_owned())),
+        Rule::string => parse_string(key_expr),
+        Rule::nested_expr => parse_nested_expr(key_expr),
+        _ => unreachable!(),
+    }?;
+    let value = parse_expr(careful_unwrap(parts.next())?)?;
+    Ok(KeyValuePair(key, value))
+}
+
+// map_literal([KEY_VALUE_PAIR, KEY_VALUE_PAIR, ..., KEY_VALUE_PAIR])
+fn parse_map_literal(pair: Pair<Rule>) -> ExprResult {
+    let kv_pairs: Result<Vec<KeyValuePair>, String> =
+        pair.into_inner().map(parse_key_value_pair).collect();
+    Ok(Expr::Map(kv_pairs?))
 }
 
 // tuple_literal([FORMER])
@@ -370,10 +401,10 @@ fn parse_pick_call(postfix: Pair<Rule>) -> PostfixResult {
     Ok(Postfix::Pick(Box::new(expr)))
 }
 
+// range_call([      RANGE_OP      ])
+// range_call([EXPR, RANGE_OP      ])
+// range_call([      RANGE_OP, EXPR])
 // range_call([EXPR, RANGE_OP, EXPR])
-// range_call([EXPR, RANGE_OP])
-// range_call([RANGE_OP, EXPR])
-// range_call([RANGE_OP])
 fn parse_range_call(postfix: Pair<Rule>) -> PostfixResult {
     let mut inclusive = true;
     let mut processed_op = false;
@@ -409,6 +440,8 @@ fn parse_range_call(postfix: Pair<Rule>) -> PostfixResult {
 }
 
 fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
+    let lhs = Box::new(lhs?);
+    let rhs = Box::new(rhs?);
     let op = match op.as_rule() {
         Rule::dbl_qst => BinOp::Nullcoel,
         Rule::dbl_star => BinOp::Exp,
@@ -440,20 +473,20 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
             return Ok(match inner_op.as_rule() {
                 Rule::ident => Expr::ReduceExpr {
                     reducer: Box::new(parse_ident(inner_op)?),
-                    lhs: Box::new(lhs?),
-                    rhs: Box::new(rhs?),
+                    lhs,
+                    rhs,
                 },
                 Rule::nested_expr => Expr::ReduceExpr {
                     reducer: Box::new(parse_nested_expr(inner_op)?),
-                    lhs: Box::new(lhs?),
-                    rhs: Box::new(rhs?),
+                    lhs,
+                    rhs,
                 },
                 _ => {
                     if let Some(binop) = parse_reducible_op(inner_op) {
                         Expr::ReduceOp {
                             op: binop,
-                            lhs: Box::new(lhs?),
-                            rhs: Box::new(rhs?),
+                            lhs,
+                            rhs,
                         }
                     } else {
                         Err(String::from("Reduce expression can only accept identifiers, nested expressions, or some binary operators"))?
@@ -463,30 +496,35 @@ fn parse_infix(lhs: ExprResult, op: Pair<Rule>, rhs: ExprResult) -> ExprResult {
         }
         Rule::infix_inject_op => {
             let inner_op = careful_unwrap(op.into_inner().next())?;
-            println!("Parsing injection: {inner_op:?}");
             return Ok(match inner_op.as_rule() {
                 Rule::ident => Expr::Inject {
                     injector: Box::new(parse_ident(inner_op)?),
-                    lhs: Box::new(lhs?),
-                    rhs: Box::new(rhs?),
+                    lhs,
+                    rhs,
                 },
                 Rule::nested_expr => Expr::Inject {
                     injector: Box::new(parse_nested_expr(inner_op)?),
-                    lhs: Box::new(lhs?),
-                    rhs: Box::new(rhs?),
+                    lhs,
+                    rhs,
                 },
                 _ => Err(String::from(
                     "Inject expression can only accept identifiers and nested expressions.",
                 ))?,
             });
         }
+        Rule::insert_op => {
+            let inner_value = careful_unwrap(op.into_inner().next())?;
+            let key = Box::new(match inner_value.as_rule() {
+                Rule::atom_keep => Expr::Atom(inner_value.as_str().to_owned()),
+                Rule::nested_expr => parse_nested_expr(inner_value)?,
+                _ => unreachable!(),
+            });
+
+            return Ok(Expr::Insert { key, lhs, rhs });
+        }
         _ => unreachable!(),
     };
-    Ok(Expr::Infix {
-        op,
-        lhs: Box::new(lhs?),
-        rhs: Box::new(rhs?),
-    })
+    Ok(Expr::Infix { op, lhs, rhs })
 }
 
 fn parse_bound(pair: Pair<Rule>) -> Bound {
@@ -689,6 +727,13 @@ fn parse_print_stmt(stmt: Pair<Rule>) -> StmtResult {
     let inner = careful_unwrap(stmt.into_inner().next())?;
     let expr = parse_expr(inner)?;
     Ok(Stmt::Print(expr))
+}
+
+// print_stmt([ EXPR ])
+fn parse_print_debug_stmt(stmt: Pair<Rule>) -> StmtResult {
+    let inner = careful_unwrap(stmt.into_inner().next())?;
+    let expr = parse_expr(inner)?;
+    Ok(Stmt::PrintDbg(expr))
 }
 
 // assign_stmt([BOUND, EXPR])

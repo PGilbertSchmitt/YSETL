@@ -22,12 +22,8 @@ pub fn print_structure(rule: Rule, input: &str) {
 fn main() {
     let ast = parse_program(
         "\
-A = switch (5) {
-  case 5.0 |> 99,
-  case 5 |> 101,
-  case ~ |> 203,
-};
-print A;
+A = [1...20000];
+print [{(x): x*2} : x in A];
     ",
     );
     let comp = Compiler::new();

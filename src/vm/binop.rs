@@ -76,6 +76,14 @@ fn op_add(left: &Object, right: &Object) -> Result<Object, String> {
             Ok(Object::new_string(new_str))
         }
 
+        // Map right-merge
+        (Object::Map { .. }, Object::Map { .. }) => Ok(Object::new_map(
+            left.inner_map()
+                .into_iter()
+                .chain(right.inner_map())
+                .collect(),
+        )),
+
         _ => op_error("+", left, right),
     }
 }
@@ -317,6 +325,15 @@ fn op_bitwise_and(left: &Object, right: &Object) -> Result<Object, String> {
         ) => Ok(Object::new_set(
             elements.intersection(other).map(Object::clone).collect(),
         )),
+
+        // Map right-merge
+        (Object::Map { .. }, Object::Map { .. }) => Ok(Object::new_map(
+            left.inner_map()
+                .into_iter()
+                .chain(right.inner_map())
+                .collect(),
+        )),
+
         _ => op_error("&", left, right),
     }
 }
@@ -400,6 +417,11 @@ fn op_less_bitshift_right(left: &Object, right: &Object) -> Result<Object, Strin
             new_elements.remove(right);
             Ok(Object::new_set(new_elements))
         }
+        (Object::Map { .. }, _) => {
+            let mut new_elements = left.inner_map();
+            new_elements.remove(right);
+            Ok(Object::new_map(new_elements))
+        }
         _ => op_error(">>", left, right),
     }
 }
@@ -407,9 +429,9 @@ fn op_less_bitshift_right(left: &Object, right: &Object) -> Result<Object, Strin
 #[cfg(test)]
 #[rustfmt::skip]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    use crate::{object::object::{Object, PreOps}, op::{self, Op}};
+    use crate::{object::object::{Atom, Object, PreOps}, op::{self, Op}};
     use super::execute_binop;
     type TestCase<'a> = (&'a Object, &'a Object, &'a Object);
     type TestCases<'a> = Vec<TestCase<'a>>;
@@ -449,6 +471,19 @@ mod tests {
         Object::new_string(val.to_owned())
     }
 
+    fn make_atom(name: &str, i: u32) -> Object {
+        Object::Atom(Atom::new(i, name.to_string()))
+    }
+
+    fn make_map(pairs: Vec<(&Object, i64)>) -> Object {
+        let elements: HashMap<Object, Object> = pairs.into_iter()
+            .fold(HashMap::new(), |mut map, (key, value)| {
+                map.insert(key.clone(), Object::Int(value));
+                return map
+            });
+        Object::new_map(elements)
+    }
+
     #[test]
     fn test_addition() {
         assert_cases(op::ADD, vec![
@@ -471,6 +506,21 @@ mod tests {
     fn test_union() {
         assert_case(op::ADD, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[1,2,3,4]));
         assert_case(op::BIT_OR, &make_set(&[1,2,3]), &make_set(&[2,3,4]), &make_set(&[1,2,3,4]));
+    }
+
+    #[test]
+    fn test_right_merge() {
+        let key_a = make_atom("a", 1);
+        let key_b = make_atom("b", 2);
+        let key_c = make_atom("c", 3);
+        let key_d = make_atom("d", 4);
+
+        let left_map = make_map(vec![(&key_a, 10), (&key_b, 20), (&key_c, 30)]);
+        let right_map = make_map(vec![(&key_b, 99), (&key_d, 40)]);
+        let result_map = make_map(vec![(&key_a, 10), (&key_b, 99), (&key_c, 30), (&key_d, 40)]);
+        
+        assert_case(op::ADD, &left_map, &right_map, &result_map);
+        assert_case(op::BIT_AND, &left_map, &right_map, &result_map);
     }
 
     #[test]
@@ -825,6 +875,18 @@ mod tests {
     #[test]
     fn test_tuple_unshift() {
         assert_case(op::LESS_BIT_RIGHT, &make_tup(&[2,3,4]), &Object::Int(1), &make_tup(&[1,2,3,4]));
+    }
+
+    #[test]
+    fn test_map_less() {
+        let key_a = make_atom("a", 1);
+        let key_b = make_atom("b", 2);
+        assert_case(
+            op::LESS_BIT_RIGHT,
+            &make_map(vec![(&key_a, 10), (&key_b, 20)]),
+            &key_a,
+            &make_map(vec![(&key_b, 20)]),
+        );
     }
 
     #[test]

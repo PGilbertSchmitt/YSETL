@@ -86,6 +86,9 @@ pub enum Former {
     },
 }
 
+#[derive(Debug)]
+pub struct KeyValuePair(pub Expr, pub Expr);
+
 #[derive(Debug, PartialEq)]
 pub enum SelectOp {
     EXISTS,
@@ -130,6 +133,7 @@ pub enum Expr {
     Float(f64),
     Tuple(Former),
     Set(Former),
+    Map(KeyValueList),
     Block(StmtListWithCapture),
     Function {
         req_params: Vec<String>,
@@ -153,6 +157,11 @@ pub enum Expr {
     },
     Inject {
         injector: Box<Expr>,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
+    Insert {
+        key: Box<Expr>,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
     },
@@ -184,6 +193,7 @@ pub enum Stmt {
     Expr(Expr),
     Return(Option<Expr>),
     Print(Expr),
+    PrintDbg(Expr),
     Assign { target: Bound, value: Expr },
 }
 
@@ -192,3 +202,4 @@ pub type StmtList = Vec<Stmt>;
 pub type BoundList = Vec<Bound>;
 pub type IteratorList = Vec<SingleIterator>;
 pub type CaseList = Vec<SwitchCase>;
+pub type KeyValueList = Vec<KeyValuePair>;
