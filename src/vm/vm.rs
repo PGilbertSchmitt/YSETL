@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::binop::execute_binop;
@@ -12,6 +11,7 @@ use crate::compiler::bytecode::{
     flags::{SET_BASE, STEP_BIT, TUP_BASE},
     Bytecode,
 };
+use crate::object::hashing_collection::new_y_map_with_capacity;
 use crate::object::object::{Atom, Executor, Object, ObjectOps};
 use crate::op::{self, lookup};
 
@@ -126,7 +126,7 @@ impl VM {
                     i_ptr += 3;
                     if collection_flag_enabled(flags, MAP_BASE) {
                         let stack_start_ptr = self.stack.len() - (size * 2);
-                        let mut map_inner: HashMap<Object, Object> = HashMap::with_capacity(size);
+                        let mut map_inner = new_y_map_with_capacity(size);
                         for pair in self
                             .stack
                             .drain(stack_start_ptr..)

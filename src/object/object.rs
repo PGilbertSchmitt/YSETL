@@ -1,18 +1,22 @@
 use base64::{engine::general_purpose, Engine as _};
 use bytes::Bytes;
+use nohash_hasher::{self, BuildNoHashHasher};
 use once_cell::unsync::OnceCell;
 use rand::RngCore;
 use std::{
-    collections::{HashMap, HashSet},
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{BuildHasher, Hash, Hasher},
     mem,
     rc::Rc,
 };
+use xxhash_rust::xxh3::Xxh3;
 
 use crate::{
     compiler::bytecode::flags::{INCL_BIT, TUP_BASE},
     vm::iterator::CollectionKind,
 };
+
+use super::hashing_collection::{new_y_set_from_vec, YsetlMap, YsetlSet};
+
 
 #[derive(Debug, Clone)]
 pub enum IterKind {
@@ -30,8 +34,8 @@ pub trait ObjectOps {
     fn inner_fn(&self) -> (Executor, usize, usize);
     fn can_reduce(&self) -> bool;
     fn inner_tuple(&self) -> Vec<Object>;
-    fn inner_set(&self) -> HashSet<Object>;
-    fn inner_map(&self) -> HashMap<Object, Object>;
+    fn inner_set(&self) -> YsetlSet;
+    fn inner_map(&self) -> YsetlMap;
     fn is_zero(&self) -> bool;
     fn ord_flt(&self) -> f64;
     fn insert(&self, key: Object, right: Object) -> Object;
@@ -73,11 +77,11 @@ pub enum Object {
         seed: Rc<OnceCell<u64>>,
     },
     Set {
-        elements: Rc<HashSet<Object>>,
+        elements: Rc<YsetlSet>,
         seed: Rc<OnceCell<u64>>,
     },
     Map {
-        elements: Rc<HashMap<Object, Object>>,
+        elements: Rc<YsetlMap>,
         seed: Rc<OnceCell<u64>>,
     },
     Closure {
@@ -103,19 +107,19 @@ impl Object {
 
     pub fn new_set_from_vec(elements: Vec<Object>) -> Self {
         Self::Set {
-            elements: Rc::new(HashSet::from_iter(elements)),
+            elements: Rc::new(new_y_set_from_vec(elements)),
             seed: Rc::new(OnceCell::new()),
         }
     }
 
-    pub fn new_set(elements: HashSet<Object>) -> Self {
+    pub fn new_set(elements: YsetlSet) -> Self {
         Self::Set {
             elements: Rc::new(elements),
             seed: Rc::new(OnceCell::new()),
         }
     }
 
-    pub fn new_map(elements: HashMap<Object, Object>) -> Self {
+    pub fn new_map(elements: YsetlMap) -> Self {
         Self::Map {
             elements: Rc::new(elements),
             seed: Rc::new(OnceCell::new()),
@@ -152,19 +156,6 @@ impl Object {
             Self::Float(val) => format!("({val})"),
             _ => self.to_s(),
         }
-    }
-
-    fn try_seed<F>(seed: &Rc<OnceCell<u64>>, generate_child_hash: F) -> u64
-    where
-        F: Fn(&mut DefaultHasher),
-    {
-        *seed
-            .get_or_try_init(|| {
-                let mut tmp_hasher = DefaultHasher::new();
-                generate_child_hash(&mut tmp_hasher);
-                Ok(tmp_hasher.finish()) as Result<u64, ()>
-            })
-            .unwrap()
     }
 }
 
@@ -233,14 +224,14 @@ impl ObjectOps for Object {
         }
     }
 
-    fn inner_set(&self) -> HashSet<Object> {
+    fn inner_set(&self) -> YsetlSet {
         match &self {
             &Object::Set { elements, .. } => (*elements.clone()).clone(),
             _ => panic!("Could not convert {self:?} into a set"),
         }
     }
 
-    fn inner_map(&self) -> HashMap<Object, Object> {
+    fn inner_map(&self) -> YsetlMap {
         match &self {
             &Object::Map { elements, .. } => (*elements.clone()).clone(),
             _ => panic!("Could not convert {self:?} into a map"),
@@ -556,89 +547,73 @@ impl PartialEq for Object {
 
 impl Eq for Object {}
 
+impl nohash_hasher::IsEnabled for Object {}
+
 impl Hash for Object {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             Object::Null => state.write_u8(b'n'),
-            Object::Bool(val) => {
-                state.write_u8(b'b');
-                val.hash(state);
-            }
-            Object::Int(x) => {
-                state.write_u8(b'i');
-                x.hash(state);
-            }
-            Object::Float(x) => {
-                state.write_u8(b'f');
-                // All I need is that the bytes of the float make it into the hasher.
-                // It doesn't really matter how "undefined" this behavior is.
-                unsafe {
-                    mem::transmute::<f64, u64>(*x).hash(state);
-                }
-            }
-            Object::Atom(atom) => {
-                state.write_u8(b'a');
-                atom.0.hash(state);
-            }
+            Object::Bool(val) => val.hash(state),
+            Object::Int(x) => state.write_i64(*x),
+            // All I need is that the bytes of the float make it into the hasher.
+            // It doesn't really matter how "undefined" this behavior is.
+            Object::Float(x) => unsafe {
+                state.write_u64(mem::transmute::<f64, u64>(*x));
+            },
+            Object::Atom(atom) => state.write_u32(atom.0),
             Object::String { value, seed } => {
-                state.write_u8(b's');
-                let seed = Object::try_seed(seed, |h| value.hash(h));
-                seed.hash(state);
+                seed.get_or_init(|| {
+                    let mut xh = Xxh3::new();
+                    xh.update(value.as_bytes());
+                    xh.write_u8(b's');
+                    xh.digest()
+                })
+                .hash(state);
             }
             Object::Tuple { elements, seed } => {
-                state.write_u8(b't');
-                let seed = Object::try_seed(seed, |h| elements.hash(h));
-                seed.hash(state);
+                seed.get_or_init(|| {
+                    let mut xh = Xxh3::new();
+                    elements.hash(&mut xh);
+                    xh.write_u8(b't');
+                    xh.digest()
+                })
+                .hash(state);
             }
             Object::Set { elements, seed } => {
-                // This may be slower than XORing all element seeds together, but is much better for collisions
-                // Maybe I didn't need to worry about this so much, and this might really only help if there
-                // are a lot of sets being used in other sets or maps.
-                state.write_u8(b'#'); // 's' was taken by String
-                let seed = Object::try_seed(seed, |h| {
-                    let mut element_subhashes = elements
-                        .iter()
-                        .map(|o| {
-                            // This makes three sets of nested hashing, but 2 of those layers only need to be
-                            // calculated once.
-                            // I'm probably too dumb in Rust to figure out a better way to do this right now.
-                            let mut sub_seed_hasher: DefaultHasher = DefaultHasher::new();
-                            o.hash(&mut sub_seed_hasher);
-                            sub_seed_hasher.finish()
-                        })
-                        .collect::<Vec<u64>>();
+                seed.get_or_init(|| {
+                    let mut element_subhashes: Vec<u64> = elements.iter().map(|o| {
+                        let mut no_hasher: nohash_hasher::NoHashHasher<u64> = BuildNoHashHasher::default().build_hasher();
+                        o.hash(&mut no_hasher);
+                        no_hasher.finish()
+                    }).collect();
                     element_subhashes.sort();
-                    element_subhashes.iter().for_each(|el| el.hash(h));
-                });
-                seed.hash(state);
+                    let mut xh = Xxh3::new();
+                    element_subhashes.iter().for_each(|subhash| xh.write_u64(*subhash));
+                    xh.write_u8(b'#');
+                    xh.finish()
+                }).hash(state);
             }
             Object::Map { elements, seed } => {
-                state.write_u8(b'm');
-                let seed = Object::try_seed(seed, |h| {
-                    let mut key_value_pair_subhashes = elements
-                        .iter()
-                        .map(|(k, v)| {
-                            // Just like Sets, there are 3 layers of nested hashing. Hopefully this is okay...
-                            // (it's probably not necessary, but I'll need to benchmark to take a look)
-                            let mut sub_seed_hasher: DefaultHasher = DefaultHasher::new();
-                            sub_seed_hasher.write_u8(b'k');
-                            k.hash(&mut sub_seed_hasher);
-                            sub_seed_hasher.write_u8(b'v');
-                            v.hash(&mut sub_seed_hasher);
-                            sub_seed_hasher.finish()
-                        })
-                        .collect::<Vec<u64>>();
-                    key_value_pair_subhashes.sort();
-                    key_value_pair_subhashes.iter().for_each(|el| el.hash(h));
-                });
-                seed.hash(state);
+                seed.get_or_init(|| {
+                    let mut element_subhashes: Vec<u64> = elements.iter().map(|o| {
+                        let mut no_hasher: nohash_hasher::NoHashHasher<u64> = BuildNoHashHasher::default().build_hasher();
+                        o.hash(&mut no_hasher);
+                        no_hasher.finish()
+                    }).collect();
+                    element_subhashes.sort();
+                    let mut xh = Xxh3::new();
+                    element_subhashes.iter().for_each(|subhash| xh.write_u64(*subhash));
+                    xh.write_u8(b'm');
+                    xh.finish()
+                }).hash(state);
             }
             Object::Closure { inner, seed } => {
-                state.write_u8(b'c');
-                let seed = Object::try_seed(seed, |h| {
-                    inner.hash(h);
-                });
-                seed.hash(state);
+                seed.get_or_init(|| {
+                    let mut xh = Xxh3::new();
+                    inner.hash(&mut xh);
+                    xh.write_u8(b'c');
+                    xh.finish()
+                }).hash(state);
             }
         }
     }

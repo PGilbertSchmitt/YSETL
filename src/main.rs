@@ -21,9 +21,12 @@ pub fn print_structure(rule: Rule, input: &str) {
 
 fn main() {
     let ast = parse_program(
-        "\
-A = [1...20000];
-print [{(x): x*2} : x in A];
+        "
+A = [1..7000];
+B = [{(x): x*2} : x in A];
+print \"Size\";
+print #B;
+print #({:} %+ B);
     ",
     );
     let comp = Compiler::new();
@@ -55,4 +58,66 @@ print [{(x): x*2} : x in A];
     let vm = VM::new(bc);
     vm.run();
     println!(":: DONE EXECUTION  ::");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        collections::HashMap,
+        hash::{Hash, Hasher},
+    };
+
+    use nohash_hasher::{self, BuildNoHashHasher};
+    use xxhash_rust::xxh3::Xxh3;
+
+    #[derive(Eq, PartialEq)]
+    enum Foo {
+        N,
+        A(u8),
+        B(String),
+        C(Vec<Foo>),
+        D(bool),
+    }
+
+    impl nohash_hasher::IsEnabled for Foo {}
+
+    impl Hash for Foo {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            match self {
+                Self::N => {
+                    state.write_u8(b'n');
+                }
+                Self::A(x) => {
+                    state.write_u8(*x);
+                }
+                Self::B(s) => {
+                    let mut xh = Xxh3::new();
+                    xh.update(s.as_bytes());
+                    xh.write_u8(b's');
+                    state.write_u64(xh.digest());
+                }
+                Self::C(v) => {
+                    let mut xh = Xxh3::new();
+                    v.hash(&mut xh);
+                    xh.write_u8(b'v');
+                    state.write_u64(xh.digest());
+                }
+                Self::D(b) => b.hash(state),
+            }
+        }
+    }
+
+    #[test]
+    fn no_hash_hashing() {
+        let mut m = HashMap::<Foo, u64, BuildNoHashHasher<u64>>::with_capacity_and_hasher(
+            8,
+            BuildNoHashHasher::default(),
+        );
+        m.insert(Foo::N, 5);
+        m.insert(Foo::A(25), 10);
+        m.insert(Foo::B(String::from("n")), 15);
+        m.insert(Foo::C(vec![Foo::N]), 20);
+        m.insert(Foo::D(true), 25);
+        m.insert(Foo::D(false), 30);
+    }
 }

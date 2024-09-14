@@ -12,7 +12,7 @@ In the beginning, there was [SETL](https://en.wikipedia.org/wiki/SETL). Showing 
 
 One of the major changes I've implemented is that all values are immutable. Operations that act on collections will generate new instances rather than modify them in-place. Is this a good idea? Probably not. Will I code it in such a way that it's highly performant? Not a chance. But is it worth it? Eh...
 
-While my personal implementation isn't designed to be a hammer for every nail, I can absolutely see this being a simple alternative to ISETL for use in the above textbooks (which is the whole reason I started this adventure). If this is in any usable state by the end of the year, I may try to tackle Advent of Code at the end of [CURRENT YEAR] in YSETL.
+While my personal implementation isn't designed to be a hammer for every nail, I can see this being a simple alternative to ISETL for use in the above textbooks (which is the whole reason I started this adventure). If this is in any usable state by the end of the year, I may try to tackle Advent of Code at the end of [CURRENT YEAR] in YSETL.
 
 ## Name
 
@@ -62,7 +62,6 @@ There's nothing special about the name **YSETL**, and I'm not breaking any new g
 Overall, this is pretty **heckin** slow compared to other dynamically typed interpreted languages like JS and Ruby, which I didn't expect with the design being so simple. However, after a light bit of profiling, I realized that there are several sections which could be slimmed down.
 
 - Switching frames by grabbing copies of the Closure/Iterator bytecode could slower than if I stitched all instructions into a single lazy-static `Vec<u8>` array and jumped inside it, though more testing is necessary to confirm that. However, I feel pretty confident that that step would be a requirement if I wanted to create precompiled blobs that could be passed to the VM as a separate step.
-- The hashing scheme isn't great because the default hasher doesn't allow me to provide my own values, which means a flat set/map will require 3 levels of hashing in order to correctly generate the top-level hash. I can definitely do better using the [nohash-hasher](https://crates.io/crates/nohash-hasher) in combination with a faster hashing algorithm than the default.
 
 ## Design
 

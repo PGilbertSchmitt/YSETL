@@ -1,6 +1,4 @@
-use std::collections::HashSet;
-
-use crate::object::object::{FrameOps, Object};
+use crate::object::{hashing_collection::{new_y_set, YsetlSet}, object::{FrameOps, Object}};
 
 #[derive(Debug, Clone)]
 pub enum CollectionKind {
@@ -61,10 +59,12 @@ impl SingleIterator {
     }
 }
 
+
+// Should consider a special collector for Maps as well
 #[derive(Debug)]
 pub enum Collector {
     Tuple(Vec<Object>),
-    Set(HashSet<Object>),
+    Set(YsetlSet),
     Accum(Object),
 }
 
@@ -73,8 +73,9 @@ impl Collector {
         Self::Tuple(Vec::new())
     }
 
+    // TODO: Should consider initializing with a capacity
     pub fn new_set() -> Self {
-        Self::Set(HashSet::new())
+        Self::Set(new_y_set())
     }
 
     pub fn size(&self) -> usize {
