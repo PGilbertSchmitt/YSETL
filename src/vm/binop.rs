@@ -429,7 +429,7 @@ fn op_less_bitshift_right(left: &Object, right: &Object) -> Result<Object, Strin
 #[cfg(test)]
 #[rustfmt::skip]
 mod tests {
-    use crate::{object::{hashing_collection::{new_y_map, YsetlMap, YsetlSet}, object::{Atom, Object, PreOps}}, op::{self, Op}};
+    use crate::{object::{hashing_collection::{new_y_map_with_capacity, YsetlMap, YsetlSet}, object::{Atom, Object, PreOps}}, op::{self, Op}};
     use super::execute_binop;
     type TestCase<'a> = (&'a Object, &'a Object, &'a Object);
     type TestCases<'a> = Vec<TestCase<'a>>;
@@ -475,7 +475,7 @@ mod tests {
 
     fn make_map(pairs: Vec<(&Object, i64)>) -> Object {
         let elements: YsetlMap = pairs.into_iter()
-            .fold(new_y_map(), |mut map, (key, value)| {
+            .fold(new_y_map_with_capacity(0), |mut map, (key, value)| {
                 map.insert(key.clone(), Object::Int(value));
                 return map
             });

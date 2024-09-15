@@ -98,6 +98,10 @@ impl Frame {
         self.iterator_mut().output.push(obj);
     }
 
+    pub fn iter_collect_kv(&mut self, key: Object, value: Object) {
+        self.iterator_mut().output.insert(key, value);
+    }
+
     pub fn any_iter_empty(&self) -> bool {
         self.iterator()
             .iterators
@@ -109,6 +113,7 @@ impl Frame {
         match self.iterator_state.unwrap().output {
             Collector::Tuple(v) => Object::new_tuple(v),
             Collector::Set(s) => Object::new_set(s),
+            Collector::Map(m) => Object::new_map(m),
             Collector::Accum(o) => o,
         }
     }

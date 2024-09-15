@@ -322,14 +322,18 @@ impl VM {
                     let closed_values = Rc::new(self.stack.drain(params_start..).collect());
 
                     let collections_start = params_start - collection_count;
-                    let collections = self.stack.drain(collections_start..).collect();
+                    let collections: Vec<_> = self.stack.drain(collections_start..).collect();
+                    let max_collection_size: usize = collections.iter().map(|o| o.len()).product();
 
                     let mut reducer: Option<Object> = None;
-                    let collector = if type_flag & TUP_BASE != 0 {
-                        Collector::new_tuple()
-                    } else if type_flag & SET_BASE != 0 {
-                        Collector::new_set()
+                    let collector = if collection_flag_enabled(type_flag, MAP_BASE) {
+                        Collector::new_map(max_collection_size)
+                    } else if collection_flag_enabled(type_flag, TUP_BASE) {
+                        Collector::new_tuple(max_collection_size)
+                    } else if collection_flag_enabled(type_flag, SET_BASE) {
+                        Collector::new_set(max_collection_size)
                     } else {
+                        // If the flag bits are 00------, then this is a reducer-type iterator.
                         // In this situation, the initial accumulator will be on the top of the stack. If the reducer
                         // is an expression reducer, there will also be a reducer function under the initial accumulator.
                         // The op-based reducer will only have the accumulator.
@@ -405,6 +409,12 @@ impl VM {
                 op::ITER_COLLECT => {
                     let item = self.stack.pop_one();
                     self.frame_mut().iter_collect(item);
+                }
+
+                op::ITER_COLLECT_KV => {
+                    let value = self.stack.pop_one();
+                    let key = self.stack.pop_one();
+                    self.frame_mut().iter_collect_kv(key, value);
                 }
 
                 op::ITER_END => {

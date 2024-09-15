@@ -1,4 +1,7 @@
-use crate::object::{hashing_collection::{new_y_set, YsetlSet}, object::{FrameOps, Object}};
+use crate::object::{
+    hashing_collection::{new_y_map_with_capacity, new_y_set_with_capacity, YsetlMap, YsetlSet},
+    object::{FrameOps, Object},
+};
 
 #[derive(Debug, Clone)]
 pub enum CollectionKind {
@@ -59,29 +62,33 @@ impl SingleIterator {
     }
 }
 
-
 // Should consider a special collector for Maps as well
 #[derive(Debug)]
 pub enum Collector {
     Tuple(Vec<Object>),
     Set(YsetlSet),
+    Map(YsetlMap),
     Accum(Object),
 }
 
 impl Collector {
-    pub fn new_tuple() -> Self {
-        Self::Tuple(Vec::new())
+    pub fn new_tuple(capacity: usize) -> Self {
+        Self::Tuple(Vec::with_capacity(capacity))
     }
 
-    // TODO: Should consider initializing with a capacity
-    pub fn new_set() -> Self {
-        Self::Set(new_y_set())
+    pub fn new_set(capacity: usize) -> Self {
+        Self::Set(new_y_set_with_capacity(capacity))
+    }
+
+    pub fn new_map(capacity: usize) -> Self {
+        Self::Map(new_y_map_with_capacity(capacity))
     }
 
     pub fn size(&self) -> usize {
         match self {
             Self::Tuple(vec) => vec.len(),
             Self::Set(set) => set.len(),
+            Self::Map(map) => map.len(),
             Self::Accum(_) => 1,
         }
     }
@@ -93,7 +100,15 @@ impl Collector {
                 s.insert(obj);
             }
             Self::Accum(o) => *o = obj,
+            Self::Map(_) => panic!("Cannot push single value into map"),
         }
+    }
+
+    pub fn insert(&mut self, key: Object, value: Object) {
+        match self {
+            Self::Map(m) => m.insert(key, value),
+            _ => panic!("Can only insert values into a map"),
+        };
     }
 }
 

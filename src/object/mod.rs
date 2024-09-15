@@ -1,2 +1,2 @@
-pub mod object;
 pub mod hashing_collection;
+pub mod object;

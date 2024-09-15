@@ -12,7 +12,9 @@ use super::ast::ExprList;
 use super::ast::Former;
 use super::ast::Iterator;
 use super::ast::IteratorList;
+use super::ast::KeyValueList;
 use super::ast::KeyValuePair;
+use super::ast::MapFormer;
 use super::ast::Postfix;
 use super::ast::PreOp;
 use super::ast::Range;
@@ -32,13 +34,14 @@ type YsetlParseResult<T> = Result<T, YsetlParseError>;
 type StmtResult = YsetlParseResult<Stmt>;
 type ExprResult = YsetlParseResult<Expr>;
 type FormerResult = YsetlParseResult<Former>;
+type MapFormerResult = YsetlParseResult<MapFormer>;
 type StmtListResult = YsetlParseResult<StmtList>;
 type ExprListResult = YsetlParseResult<ExprList>;
 type SingleIteratorResult = YsetlParseResult<SingleIterator>;
 type CaseResult = YsetlParseResult<SwitchCase>;
 type PostfixResult = YsetlParseResult<Postfix>;
 type BlockResult = YsetlParseResult<StmtListWithCapture>;
-type KeyValueResult = YsetlParseResult<KeyValuePair>;
+type KeyValueListResult = YsetlParseResult<KeyValueList>;
 
 type ParamList = (Vec<String>, Vec<String>);
 
@@ -133,7 +136,7 @@ fn parse_stmt(stmt: Pair<Rule>) -> StmtResult {
     }
 }
 
-pub fn parse_expr(expr: Pair<Rule>) -> ExprResult {
+fn parse_expr(expr: Pair<Rule>) -> ExprResult {
     match expr.as_rule() {
         Rule::nested_expr => parse_nested_expr(expr),
         Rule::select_expr => parse_select_expr(expr),
@@ -165,7 +168,6 @@ fn parse_primary(primary: Pair<Rule>) -> ExprResult {
         Rule::kw_newat => Ok(Expr::Newat),
         Rule::kw_true => Ok(Expr::True),
         Rule::kw_false => Ok(Expr::False),
-        Rule::map_literal_empty => Ok(Expr::Map(Vec::new())),
         Rule::string => parse_string(primary),
         Rule::atom => parse_atom(primary),
         Rule::ident => parse_ident(primary),
@@ -249,29 +251,9 @@ fn parse_number(pair: Pair<Rule>) -> ExprResult {
     }
 }
 
-// key_value_pair([NUMBER,      EXPR])
-// key_value_pair([ATOM_KEEP,   EXPR])
-// key_value_pair([STRING,      EXPR])
-// key_value_pair([NESTED_EXPR, EXPR])
-fn parse_key_value_pair(pair: Pair<Rule>) -> KeyValueResult {
-    let mut parts = pair.into_inner();
-    let key_expr = careful_unwrap(parts.next())?;
-    let key = match key_expr.as_rule() {
-        Rule::number => parse_number(key_expr),
-        Rule::atom_keep => Ok(Expr::Atom(key_expr.as_str().to_owned())),
-        Rule::string => parse_string(key_expr),
-        Rule::nested_expr => parse_nested_expr(key_expr),
-        _ => unreachable!(),
-    }?;
-    let value = parse_expr(careful_unwrap(parts.next())?)?;
-    Ok(KeyValuePair(key, value))
-}
-
 // map_literal([KEY_VALUE_PAIR, KEY_VALUE_PAIR, ..., KEY_VALUE_PAIR])
 fn parse_map_literal(pair: Pair<Rule>) -> ExprResult {
-    let kv_pairs: Result<Vec<KeyValuePair>, String> =
-        pair.into_inner().map(parse_key_value_pair).collect();
-    Ok(Expr::Map(kv_pairs?))
+    Ok(Expr::Map(parse_map_former(pair)?))
 }
 
 // tuple_literal([FORMER])
@@ -344,6 +326,51 @@ fn parse_iterator_former(pair: Pair<Rule>) -> FormerResult {
     let iterator = parse_iterator(careful_unwrap(parts.next())?)?;
     Ok(Former::Iterator {
         output: Box::new(expr),
+        iterator,
+    })
+}
+
+fn parse_map_former(pair: Pair<Rule>) -> MapFormerResult {
+    let former = careful_unwrap(pair.into_inner().next())?;
+    match former.as_rule() {
+        Rule::colon => Ok(MapFormer::Empty),
+        Rule::map_literal_former => Ok(MapFormer::Literal(parse_map_key_value_pairs(former)?)),
+        Rule::map_iterator_former => parse_map_iterator(former),
+        _ => unreachable!(),
+    }
+}
+
+// key_value_pairs([KEY_VALUE_PAIR, KEY_VALUE_PAIR, ..., KEY_VALUE_PAIR])
+fn parse_map_key_value_pairs(pair: Pair<Rule>) -> KeyValueListResult {
+    pair.into_inner()
+        .map(|inner_pair| {
+            // key_value_pair([NUMBER,      EXPR])
+            // key_value_pair([ATOM_KEEP,   EXPR])
+            // key_value_pair([STRING,      EXPR])
+            // key_value_pair([NESTED_EXPR, EXPR])
+            let mut parts = inner_pair.into_inner();
+            let key_expr = careful_unwrap(parts.next())?;
+            let key = match key_expr.as_rule() {
+                Rule::number => parse_number(key_expr),
+                Rule::atom_keep => Ok(Expr::Atom(key_expr.as_str().to_owned())),
+                Rule::string => parse_string(key_expr),
+                Rule::nested_expr => parse_nested_expr(key_expr),
+                _ => unreachable!(),
+            }?;
+            let value = parse_expr(careful_unwrap(parts.next())?)?;
+            Ok(KeyValuePair(key, value))
+        })
+        .collect()
+}
+
+fn parse_map_iterator(pair: Pair<Rule>) -> MapFormerResult {
+    let mut parts = pair.into_inner();
+    let key_expr = parse_expr(careful_unwrap(parts.next())?)?;
+    let value_expr = parse_expr(careful_unwrap(parts.next())?)?;
+    let iterator = parse_iterator(careful_unwrap(parts.next())?)?;
+    Ok(MapFormer::Iterator {
+        key_output: Box::new(key_expr),
+        value_output: Box::new(value_expr),
         iterator,
     })
 }

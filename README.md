@@ -1,6 +1,6 @@
 # YSETL Language
 
-A small, set-based programming language based off of ISETL.
+A small, set-focused programming language based off of ISETL.
 
 ## History
 

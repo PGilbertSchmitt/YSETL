@@ -89,6 +89,17 @@ pub enum Former {
 #[derive(Debug)]
 pub struct KeyValuePair(pub Expr, pub Expr);
 
+#[derive(Debug)]
+pub enum MapFormer {
+    Empty,
+    Literal(KeyValueList),
+    Iterator {
+        key_output: Box<Expr>,
+        value_output: Box<Expr>,
+        iterator: Iterator,
+    },
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SelectOp {
     EXISTS,
@@ -133,7 +144,7 @@ pub enum Expr {
     Float(f64),
     Tuple(Former),
     Set(Former),
-    Map(KeyValueList),
+    Map(MapFormer),
     Block(StmtListWithCapture),
     Function {
         req_params: Vec<String>,

@@ -17,7 +17,6 @@ use crate::{
 
 use super::hashing_collection::{new_y_set_from_vec, YsetlMap, YsetlSet};
 
-
 #[derive(Debug, Clone)]
 pub enum IterKind {
     Tuple,
@@ -27,6 +26,7 @@ pub enum IterKind {
 }
 
 pub trait ObjectOps {
+    fn len(&self) -> usize;
     fn is_truthy(&self) -> bool;
     fn is_null(&self) -> bool;
     fn truthy_convert(&self) -> Self;
@@ -160,6 +160,16 @@ impl Object {
 }
 
 impl ObjectOps for Object {
+    fn len(&self) -> usize {
+        match &self {
+            &Object::String { value, .. } => value.len(),
+            &Object::Tuple { elements, .. } => elements.len(),
+            &Object::Set { elements, .. } => elements.len(),
+            &Object::Map { elements, .. } => elements.len(),
+            _ => panic!("Cannot calculate length of non-collection"),
+        }
+    }
+
     fn is_null(&self) -> bool {
         *self == Object::Null
     }
@@ -306,7 +316,7 @@ impl ObjectOps for Object {
                     .iter()
                     .map(|o| o.to_s())
                     .collect::<Vec<String>>()
-                    .join(",")
+                    .join(", ")
             ),
             Self::Set { elements, .. } => format!(
                 "{{{}}}",
@@ -581,31 +591,44 @@ impl Hash for Object {
             }
             Object::Set { elements, seed } => {
                 seed.get_or_init(|| {
-                    let mut element_subhashes: Vec<u64> = elements.iter().map(|o| {
-                        let mut no_hasher: nohash_hasher::NoHashHasher<u64> = BuildNoHashHasher::default().build_hasher();
-                        o.hash(&mut no_hasher);
-                        no_hasher.finish()
-                    }).collect();
+                    let mut element_subhashes: Vec<u64> = elements
+                        .iter()
+                        .map(|o| {
+                            let mut no_hasher: nohash_hasher::NoHashHasher<u64> =
+                                BuildNoHashHasher::default().build_hasher();
+                            o.hash(&mut no_hasher);
+                            no_hasher.finish()
+                        })
+                        .collect();
                     element_subhashes.sort();
                     let mut xh = Xxh3::new();
-                    element_subhashes.iter().for_each(|subhash| xh.write_u64(*subhash));
+                    element_subhashes
+                        .iter()
+                        .for_each(|subhash| xh.write_u64(*subhash));
                     xh.write_u8(b'#');
                     xh.finish()
-                }).hash(state);
+                })
+                .hash(state);
             }
             Object::Map { elements, seed } => {
                 seed.get_or_init(|| {
-                    let mut element_subhashes: Vec<u64> = elements.iter().map(|o| {
-                        let mut no_hasher: nohash_hasher::NoHashHasher<u64> = BuildNoHashHasher::default().build_hasher();
-                        o.hash(&mut no_hasher);
-                        no_hasher.finish()
-                    }).collect();
+                    let mut element_subhashes: Vec<u64> = elements
+                        .iter()
+                        .map(|o| {
+                            let mut sub_xh = Xxh3::new();
+                            o.hash(&mut sub_xh);
+                            sub_xh.finish()
+                        })
+                        .collect();
                     element_subhashes.sort();
                     let mut xh = Xxh3::new();
-                    element_subhashes.iter().for_each(|subhash| xh.write_u64(*subhash));
+                    element_subhashes
+                        .iter()
+                        .for_each(|subhash| xh.write_u64(*subhash));
                     xh.write_u8(b'm');
                     xh.finish()
-                }).hash(state);
+                })
+                .hash(state);
             }
             Object::Closure { inner, seed } => {
                 seed.get_or_init(|| {
@@ -613,7 +636,8 @@ impl Hash for Object {
                     inner.hash(&mut xh);
                     xh.write_u8(b'c');
                     xh.finish()
-                }).hash(state);
+                })
+                .hash(state);
             }
         }
     }

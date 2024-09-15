@@ -11,8 +11,8 @@ use super::scope::{ScopeKind, ScopeStack, SymbolRef};
 use crate::object::object::{Atom, Executor, Object};
 use crate::op::{self, Op};
 use crate::parser::ast::{
-    BinOp, Bound, Expr, ExprList, Former, Iterator, KeyValuePair, Postfix, PreOp, SelectOp,
-    SingleIterator, Stmt, StmtList, StmtListWithCapture, SwitchCase,
+    BinOp, Bound, Expr, ExprList, Former, Iterator, KeyValuePair, MapFormer, Postfix, PreOp,
+    SelectOp, SingleIterator, Stmt, StmtList, StmtListWithCapture, SwitchCase,
 };
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -141,14 +141,7 @@ impl Compiler {
                 let const_ptr = self.add_const(Object::new_string(value));
                 self.emit_with_u16(op::CONST, const_ptr);
             }
-            Expr::Map(pairs) => {
-                let size = pairs.len() as u16;
-                for KeyValuePair(key, value) in pairs.into_iter() {
-                    self.compile_expr(key);
-                    self.compile_expr(value);
-                }
-                self.emit_with_u8_u16(op::MAKE_LIT_COL, MAP_BASE, size);
-            }
+            Expr::Map(former) => self.compile_map_former(former),
             Expr::Tuple(former) => self.compile_former(former, TUP_BASE),
             Expr::Set(former) => self.compile_former(former, SET_BASE),
             Expr::Ident(name) => {
@@ -462,6 +455,25 @@ impl Compiler {
         }
     }
 
+    fn compile_map_former(&mut self, former: MapFormer) {
+        match former {
+            MapFormer::Empty => self.emit_with_u8_u16(op::MAKE_LIT_COL, MAP_BASE, 0),
+            MapFormer::Literal(pairs) => {
+                let size = pairs.len() as u16;
+                for KeyValuePair(key, value) in pairs.into_iter() {
+                    self.compile_expr(key);
+                    self.compile_expr(value);
+                }
+                self.emit_with_u8_u16(op::MAKE_LIT_COL, MAP_BASE, size);
+            }
+            MapFormer::Iterator {
+                key_output,
+                value_output,
+                iterator,
+            } => self.compile_map_iterator_former(*key_output, *value_output, iterator),
+        }
+    }
+
     fn compile_iterator_symbol_loader(&mut self, iter_vars: &Vec<IterVar>) -> usize {
         let iteration_start_ptr = self.ins_len();
 
@@ -713,6 +725,31 @@ impl Compiler {
         self.compile_iterator_nexts(&iter_vars, iteration_start_ptr as u32, empty_check_ptr);
         self.emit(op::ITER_END);
         self.compile_iterator_end(collection_count, flag_base);
+    }
+
+    fn compile_map_iterator_former(
+        &mut self,
+        key_eval: Expr,
+        value_eval: Expr,
+        iterator: Iterator,
+    ) {
+        let (iter_vars, filter, empty_check_ptr, iteration_start_ptr, collection_count) =
+            self.compile_iterator_start(iterator);
+        let jump_ptr_dest = self.compile_iterator_filter(filter, op::JUMP_IF_FALSE);
+
+        self.compile_expr(key_eval);
+        self.compile_expr(value_eval);
+        self.emit(op::ITER_COLLECT_KV);
+
+        // Since we now know where the iterate incrementers start, we can update the
+        // pointer of the jump (if it exists)
+        if let Some(dest) = jump_ptr_dest {
+            self.overwrite_u32(dest as usize, self.ins_len() as u32);
+        }
+
+        self.compile_iterator_nexts(&iter_vars, iteration_start_ptr as u32, empty_check_ptr);
+        self.emit(op::ITER_END);
+        self.compile_iterator_end(collection_count, MAP_BASE);
     }
 
     fn register_bound(&mut self, bound: Bound) {

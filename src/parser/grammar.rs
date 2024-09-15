@@ -63,8 +63,8 @@ mod tests {
         parse_is_ok(Rule::tuple_literal, "[1,2]");
         parse_is_ok(Rule::tuple_literal, "[1..10]");
         parse_is_ok(Rule::tuple_literal, "[1,3..10]");
-        parse_is_ok(Rule::tuple_literal, "[x+2 : x in Z]");
-        parse_is_ok(Rule::tuple_literal, "[[x,y] : x in Z, y=W(x) -> not x]");
+        parse_is_ok(Rule::tuple_literal, "[x+2 :: x in Z]");
+        parse_is_ok(Rule::tuple_literal, "[[x,y] :: x in Z, y=W(x) -> not x]");
     }
 
     #[test]
@@ -74,12 +74,24 @@ mod tests {
         parse_is_ok(Rule::set_literal, "{1,2}");
         parse_is_ok(Rule::set_literal, "{1..10}");
         parse_is_ok(Rule::set_literal, "{1,3..10}");
-        parse_is_ok(Rule::set_literal, "{x+2 : x in Z}");
-        parse_is_ok(Rule::set_literal, "{[x,y] : x in Z, y=W(x) -> not x}");
+        parse_is_ok(Rule::set_literal, "{x+2 :: x in Z}");
+        parse_is_ok(Rule::set_literal, "{[x,y] :: x in Z, y=W(x) -> not x}");
         parse_is_ok(
             Rule::set_literal,
-            "{[x,y] : x,y in[a+b..b+a**2], a=foo(b) -> x > k && g < u}",
+            "{[x,y] :: x,y in[a+b..b+a**2], a=foo(b) -> x > k && g < u}",
         );
+    }
+
+    #[test]
+    fn map_literal() {
+        parse_is_ok(Rule::map_literal, "{:}");
+        parse_is_ok(Rule::map_literal, "{a: 1}");
+        parse_is_ok(Rule::map_literal, "{a: 1, b: 2}");
+        parse_is_ok(
+            Rule::map_literal,
+            "{a: 1, (2): 2, \"three\": 3, ({ 4 }): 4}",
+        );
+        parse_is_ok(Rule::map_literal, "{x-1, y*2 :: x=A(y) -> x > y}");
     }
 
     #[test]

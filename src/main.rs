@@ -21,12 +21,11 @@ pub fn print_structure(rule: Rule, input: &str) {
 
 fn main() {
     let ast = parse_program(
-        "
-A = [1..7000];
-B = [{(x): x*2} : x in A];
-print \"Size\";
-print #B;
-print #({:} %+ B);
+        "\
+A = [1..500000];
+print #[{(x): x*2} :: x in A];
+print #{{(x): x*2} :: x in A};
+print #{x, x*2 :: x in A};
     ",
     );
     let comp = Compiler::new();
@@ -56,8 +55,12 @@ print #({:} %+ B);
 
     println!(":: START EXECUTION ::");
     let vm = VM::new(bc);
+    let start_time = std::time::Instant::now();
     vm.run();
-    println!(":: DONE EXECUTION  ::");
+    println!(
+        ":: DONE EXECUTION  :: (took {}ms)",
+        start_time.elapsed().as_millis()
+    );
 }
 
 #[cfg(test)]

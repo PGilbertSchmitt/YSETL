@@ -42,14 +42,15 @@ pub const RETURN: Op = 41;
 pub const ITER_START: Op = 60;
 pub const ITER_NEXT: Op = 61;
 pub const ITER_COLLECT: Op = 62;
-pub const ITER_END: Op = 63;
-pub const GET_ITER_VAL: Op = 64;
-pub const GET_ITER_KEY: Op = 65;
-pub const ITER_EMPTY_CHECK: Op = 66;
-pub const GET_ACC: Op = 67;
-pub const REDUCE_CALL: Op = 68;
-pub const REDUCE_WITH: Op = 69;
-pub const MAKE_ITER: Op = 70;
+pub const ITER_COLLECT_KV: Op = 63;
+pub const ITER_END: Op = 64;
+pub const GET_ITER_VAL: Op = 65;
+pub const GET_ITER_KEY: Op = 66;
+pub const ITER_EMPTY_CHECK: Op = 67;
+pub const GET_ACC: Op = 68;
+pub const REDUCE_CALL: Op = 69;
+pub const REDUCE_WITH: Op = 70;
+pub const MAKE_ITER: Op = 71;
 
 // Builtins
 pub const PRINT: Op = 150;
@@ -128,6 +129,7 @@ pub const fn lookup(byte: u8) -> (&'static str, &'static [u8]) {
         ITER_START => ("ITER_START", &[2, 2, 1, 1]),
         ITER_NEXT => ("ITER_NEXT", &[1, 4]),
         ITER_COLLECT => ("ITER_COLLECT", &[]),
+        ITER_COLLECT_KV => ("ITER_COLLECT_KV", &[]),
         ITER_END => ("ITER_END", &[]),
         MAKE_ITER => ("MAKE_ITER", &[1]),
         GET_ITER_VAL => ("GET_ITER_VAL", &[1]),

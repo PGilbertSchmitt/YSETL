@@ -67,6 +67,7 @@ fat_arrow  = _{ "=>" }
 tall_arrow = _{ "|>" }
 dbl_slash  = _{ "//" }
 dbl_dot    = _{ ".." }
+dbl_colon  = _{ "::" }
 tpl_dot    = _{ "..." }
 
 // Direct operator symbols
@@ -201,15 +202,11 @@ map_key = _{
   | nested_expr
 }
 key_value_pair = { map_key ~ colon ~ expr }
-map_literal    = { l_brace ~ key_value_pair ~ (comma ~ key_value_pair)* ~ comma? ~ r_brace }
-
-// This is necessary because otherwise, the literal would be interpreted
-// as an empty set.
-map_literal_empty = { l_brace ~ colon ~ r_brace }
+map_literal    = { l_brace ~ map_former ~ r_brace }
 
 // Former
 
-iterator_former       =  { expr ~ colon ~ iterator }
+iterator_former       =  { expr ~ dbl_colon ~ iterator }
 inclusive_range_op    =  { dbl_dot }
 exclusive_range_op    =  { tpl_dot }
 range_op              = _{ exclusive_range_op | inclusive_range_op }
@@ -221,6 +218,15 @@ former = _{
   | interval_range_former // must come before literal former
   | range_former
   | expr_list
+}
+
+map_iterator_former = { expr ~ comma ~ expr ~ dbl_colon ~ iterator }
+map_literal_former  = { key_value_pair ~ (comma ~ key_value_pair)* ~ comma? }
+
+map_former = _{
+  | colon // Empty map. I need some way to distinguish it from an empty set
+  | map_iterator_former
+  | map_literal_former
 }
 
 // Bound (The LHS of an assignment / destructuring)
@@ -300,7 +306,6 @@ primary = _{
   | number
   | string
   | tuple_literal
-  | map_literal_empty
   | map_literal
   | set_literal
   | func_literal
